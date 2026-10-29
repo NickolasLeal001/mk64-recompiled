@@ -21,7 +21,7 @@ layout(location = 4) flat out vec4 v_p0;
 layout(location = 5) flat out vec4 v_p1;
 
 void main() {
-    gl_Position = vec4(a_pos.x / u_size.x * 2.0 - 1.0, 1.0 - a_pos.y / u_size.y * 2.0, clamp(a_pos.z, 0.0, 1.0), 1.0);
+    gl_Position = vec4(a_pos.x / u_size.x * 2.0 - 1.0, 1.0 - a_pos.y / u_size.y * 2.0, clamp(a_pos.z * DEPTH_SCALE, 0.0, 1.0), 1.0);
     v_shade = a_shade;
     v_stq = vec3(a_st, a_pos.w);
     v_z = a_pos.z;

@@ -21,6 +21,5 @@ void gpu_present(SDL_GPUTexture *tex, int w, int h, int log_w, int smooth);
 SDL_GPUTexture *gpu_upload_image(int slot, const uint32_t *pixels, int w, int h);
 // Reads a texture back (ABGR, like rdp_read_framebuffer); for screenshots only.
 int gpu_download(SDL_GPUTexture *tex, int w, int h, uint32_t *out);
-SDL_GPUTexture *gpu_test_target(int w, int h);
 
 #endif

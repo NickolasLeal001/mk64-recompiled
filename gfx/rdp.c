@@ -46,6 +46,7 @@ static __declspec(thread) int g_hipass;              // drawing the enlarged pas
 static __declspec(thread) int g_s = 1, g_ox;         // its scale and side margin
 static __declspec(thread) HiTarget *g_tgt;           // its image (NULL: RDRAM)
 static __declspec(thread) int g_ipass;               // drawing the in-between image (icolor)
+static int g_gpu;                                    // the GPU draws the display copies (gpu.c)
 static int g_interp;                                 // recording an interpolated run
 static uint64_t g_interp_id;
 static RdpState g_rec_saved;
@@ -55,6 +56,7 @@ static int hi_ox(int w) {
     return w == 320 && extra >= 1.0f ? (int)(extra + 0.5f) : 0;
 }
 static int hi_stride(int w) { return w * g_scale + 2 * hi_ox(w); }
+int rdp_hi_ox(int w) { return hi_ox(w); }
 
 // ---------------------------------------------------------------------------------------------
 // Othermode fields
@@ -407,7 +409,7 @@ static float *zbuffer_alloc(void) {
         rdp_flush();
         zbuf_reset(&g_zbuf, w, h);
     }
-    if (g_hires && (!g_zhi.z || g_zhi.addr != REC.zimg || g_zhi.w != hi_stride(w))) {
+    if (g_hires && !g_gpu && (!g_zhi.z || g_zhi.addr != REC.zimg || g_zhi.w != hi_stride(w))) {
         rdp_flush();
         zbuf_reset(&g_zhi, hi_stride(w), h * g_scale);
     }
@@ -665,7 +667,13 @@ static size_t hi_size(const HiTarget *t) { return (size_t)t->w * 240; }
 
 // Brings the private image up to date with RDRAM: pixels that differ from the shadow were written
 // by someone else (CPU, DMA) and are copied in, enlarged. With patch = 0 only the shadow is updated.
+static void hi_sync_gpu(HiTarget *t, int patch);
+
 static void hi_sync(HiTarget *t, int patch) {
+    if (g_gpu) {
+        hi_sync_gpu(t, patch);
+        return;
+    }
     int s = g_scale, W = t->stride;
     for (size_t k = 0; k < hi_size(t); k++) {
         uint16_t c = mem_r16(g_ram, RAM(t->addr + (uint32_t)k * 2));
@@ -678,9 +686,41 @@ static void hi_sync(HiTarget *t, int patch) {
     }
 }
 
+// GPU: the changed pixels go to the GPU as one block (their bounding box) with a mark on each.
+static void hi_sync_gpu(HiTarget *t, int patch) {
+    static uint32_t *words;
+    static size_t cap;
+    int w = t->w, x0 = w, y0 = 240, x1 = -1, y1 = -1;
+    if (cap < hi_size(t)) {
+        cap = hi_size(t);
+        words = realloc(words, sizeof(uint32_t) * cap);
+    }
+    for (size_t k = 0; k < hi_size(t); k++) {
+        uint16_t c = mem_r16(g_ram, RAM(t->addr + (uint32_t)k * 2));
+        if (c == t->shadow[k]) {
+            words[k] = 0;
+            continue;
+        }
+        t->shadow[k] = c;
+        words[k] = c | 0x10000u;
+        int x = (int)(k % (size_t)w), y = (int)(k / (size_t)w);
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+    }
+    if (!patch || x1 < 0) return;
+    int bw = x1 - x0 + 1, bh = y1 - y0 + 1;
+    if (bw != w)  // pack the box rows together
+        for (int y = 0; y < bh; y++) memmove(&words[(size_t)y * bw], &words[(size_t)(y0 + y) * w + x0], sizeof(uint32_t) * bw);
+    else if (y0)
+        memmove(words, &words[(size_t)y0 * w], sizeof(uint32_t) * (size_t)bw * bh);
+    gpu_patch(t, x0, y0, bw, bh, words);
+}
+
 static HiTarget *hi_find(uint32_t addr, int w) {
     for (int k = 0; k < HI_TARGETS; k++)
-        if (g_hi[k].color && g_hi[k].addr == addr && g_hi[k].w == w) return &g_hi[k];
+        if ((g_hi[k].color || g_hi[k].gpu) && g_hi[k].addr == addr && g_hi[k].w == w) return &g_hi[k];
     return NULL;
 }
 
@@ -697,15 +737,21 @@ static HiTarget *hi_target(void) {
         free(t->color);
         free(t->shadow);
         free(t->icolor);
+        gpu_target_release(t);
+        t->color = NULL;
         t->icolor = NULL;
         t->istamp = 0;
         t->addr = REC.cimg; t->w = w; t->ox = hi_ox(w); t->stride = hi_stride(w);
-        // One spare row: like RDRAM, a primitive past the right edge spills into the next row.
-        size_t pixels = (size_t)t->stride * (size_t)(240 * g_scale + 1);
-        t->color = malloc(sizeof(uint16_t) * pixels);
         t->shadow = malloc(sizeof(uint16_t) * hi_size(t));
         memset(t->shadow, 0, sizeof(uint16_t) * hi_size(t));
-        memset(t->color, 0, sizeof(uint16_t) * pixels);
+        if (g_gpu) {
+            gpu_target_create(t);
+        } else {
+            // One spare row: like RDRAM, a primitive past the right edge spills into the next row.
+            size_t pixels = (size_t)t->stride * (size_t)(240 * g_scale + 1);
+            t->color = malloc(sizeof(uint16_t) * pixels);
+            memset(t->color, 0, sizeof(uint16_t) * pixels);
+        }
         t->pending = 0;
     }
     t->used = ++g_hi_clock;
@@ -715,13 +761,15 @@ static HiTarget *hi_target(void) {
 
 void rdp_set_scale(int scale, float aspect, int interp) {
     rdp_flush();
-    g_scale = scale < 1 ? 1 : scale > 4 ? 4 : scale;
+    int max_scale = g_gpu ? 8 : 4;
+    g_scale = scale < 1 ? 1 : scale > max_scale ? max_scale : scale;
     g_aspect = aspect > 4.0f / 3.0f ? (aspect > 4.0f ? 4.0f : aspect) : 4.0f / 3.0f;
     g_hires = g_scale > 1 || hi_ox(320) > 0 || interp;
     for (int k = 0; k < HI_TARGETS; k++) {
         free(g_hi[k].color);
         free(g_hi[k].shadow);
         free(g_hi[k].icolor);
+        gpu_target_release(&g_hi[k]);
         memset(&g_hi[k], 0, sizeof g_hi[k]);
     }
     free(g_zhi.z);
@@ -729,6 +777,11 @@ void rdp_set_scale(int scale, float aspect, int interp) {
 }
 
 int rdp_get_scale(void) { return g_scale; }
+
+void rdp_set_gpu(int on) {
+    rdp_set_scale(1, 4.0f / 3.0f, 0);  // drops the display copies of the other renderer
+    g_gpu = on;
+}
 
 static Op *record(int kind, int tile) {
     if (REC.tile != tile) { REC.tile = tile; g_dirty = 1; }
@@ -741,10 +794,14 @@ static Op *record(int kind, int tile) {
     if (!g_interp && target) target->istamp = 0;  // redrawn: its in-between image is stale
     if (g_interp && target && target->istamp != g_interp_id) {
         // The in-between image starts from the current display copy, like the real frame will.
-        size_t pixels = (size_t)target->stride * (size_t)(240 * g_scale + 1);
         hi_sync(target, 1);
-        if (!target->icolor) target->icolor = malloc(sizeof(uint16_t) * pixels);
-        memcpy(target->icolor, target->color, sizeof(uint16_t) * pixels);
+        if (g_gpu) {
+            gpu_copy_interp(target);
+        } else {
+            size_t pixels = (size_t)target->stride * (size_t)(240 * g_scale + 1);
+            if (!target->icolor) target->icolor = malloc(sizeof(uint16_t) * pixels);
+            memcpy(target->icolor, target->color, sizeof(uint16_t) * pixels);
+        }
         target->istamp = g_interp_id;
     }
     if (g_op_count == g_op_cap) {
@@ -808,13 +865,17 @@ void rdp_flush(void) {
         // Private images first take what others wrote to RDRAM since the last flush.
         for (int k = 0; k < HI_TARGETS; k++)
             if (g_hi[k].pending) hi_sync(&g_hi[k], 1);
-        if (g_interp) draw_pass(g_scale, 2);  // in-between images only; RDRAM is left alone
+        // In-between images only; RDRAM is left alone.
+        if (g_interp && g_gpu) gpu_draw_ops(g_ops, g_op_count, 1);
+        else if (g_interp) draw_pass(g_scale, 2);
         else draw_pass(1, 0);
         if (g_hires && !g_interp) {
-            draw_pass(g_scale, 1);
+            if (g_gpu) gpu_draw_ops(g_ops, g_op_count, 0);
+            else draw_pass(g_scale, 1);
             for (int k = 0; k < HI_TARGETS; k++)
                 if (g_hi[k].pending) { hi_sync(&g_hi[k], 0); g_hi[k].pending = 0; }
         }
+        if (g_gpu) gpu_submit();
     }
     for (size_t k = 0; k < g_snap_count; k++) free(g_snaps[k]);
     g_snap_count = 0;
@@ -976,7 +1037,7 @@ static void to_abgr(const uint16_t *src, int n, uint32_t *out) {
 }
 
 int rdp_read_framebuffer_hires(uint32_t addr, int width, int height, uint32_t *out, int *out_w, int *out_h) {
-    if (!g_hires) return 0;
+    if (!g_hires || g_gpu) return 0;
     rdp_flush();
     HiTarget *t = hi_find(addr & 0x00FFFFFFu, width);
     if (!t || height > 240) return 0;
@@ -988,12 +1049,27 @@ int rdp_read_framebuffer_hires(uint32_t addr, int width, int height, uint32_t *o
 }
 
 uint64_t rdp_read_framebuffer_interp(uint32_t addr, int width, int height, uint32_t *out, int *out_w, int *out_h) {
-    HiTarget *t = g_hires ? hi_find(addr & 0x00FFFFFFu, width) : NULL;
+    HiTarget *t = g_hires && !g_gpu ? hi_find(addr & 0x00FFFFFFu, width) : NULL;
     if (!t || !t->icolor || !t->istamp || height > 240) return 0;
     *out_w = t->stride;
     *out_h = height * g_scale;
     to_abgr(t->icolor, *out_w * *out_h, out);
     return t->istamp;
+}
+
+struct SDL_GPUTexture *rdp_gpu_frame(uint32_t addr, int width, int height, int interp, uint64_t *stamp, int *out_w, int *out_h) {
+    if (!g_hires || !g_gpu || height > 240) return NULL;
+    if (!interp) rdp_flush();
+    HiTarget *t = hi_find(addr & 0x00FFFFFFu, width);
+    if (!t || (interp && !t->istamp)) return NULL;
+    if (!interp) {
+        hi_sync(t, 1);
+        gpu_submit();
+    }
+    *out_w = t->stride;
+    *out_h = height * g_scale;
+    if (stamp) *stamp = t->istamp;
+    return gpu_target_texture(t, interp);
 }
 
 int rdp_tile_size(int tile, int *w, int *h) {

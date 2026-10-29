@@ -273,16 +273,26 @@ static int on_retrace(void *user) {
         rdp_read_framebuffer(fb, FB_W, FB_H, app->pixels);
         if (app->screen) SDL_UpdateTexture(app->screen, NULL, app->pixels, FB_W * 4);
         int hw = 0, hh = 0;
-        uint64_t mid = app->interp && swapped && app->prev_held >= 2
-                           ? rdp_read_framebuffer_interp(fb, FB_W, FB_H, app->hpixels, &hw, &hh) : 0;
-        if (mid && mid != app->interp_shown) {
-            app->interp_shown = mid;
-            app->showing_hi = 1;
+        int want_mid = app->interp && swapped && app->prev_held >= 2;
+        int shot = app->shots && n % (uint64_t)app->shots == 0 && n >= app->shots_from && n <= app->shots_to;
+        if (app->gpu) {
+            // The GPU path hands over textures; screenshots read them back.
+            uint64_t mid = 0;
+            SDL_GPUTexture *tex = want_mid ? rdp_gpu_frame(fb, FB_W, FB_H, 1, &mid, &hw, &hh) : NULL;
+            if (tex && mid != app->interp_shown) app->interp_shown = mid;
+            else tex = rdp_gpu_frame(fb, FB_W, FB_H, 0, NULL, &hw, &hh);
+            app->showing_hi = tex != NULL;
+            app->gpu_shown = tex ? tex : app->window ? gpu_upload_image(0, app->pixels, FB_W, FB_H) : NULL;
+            if (tex && shot && app->hpixels) gpu_download(tex, hw, hh, app->hpixels);
         } else {
-            app->showing_hi = app->hpixels && rdp_read_framebuffer_hires(fb, FB_W, FB_H, app->hpixels, &hw, &hh);
+            uint64_t mid = want_mid ? rdp_read_framebuffer_interp(fb, FB_W, FB_H, app->hpixels, &hw, &hh) : 0;
+            if (mid && mid != app->interp_shown) {
+                app->interp_shown = mid;
+                app->showing_hi = 1;
+            } else {
+                app->showing_hi = app->hpixels && rdp_read_framebuffer_hires(fb, FB_W, FB_H, app->hpixels, &hw, &hh);
+            }
         }
-        if (app->gpu && app->window)
-            app->gpu_shown = app->showing_hi ? gpu_upload_image(1, app->hpixels, hw, hh) : gpu_upload_image(0, app->pixels, FB_W, FB_H);
         if (app->showing_hi && app->renderer) {
             if (!app->screen_hi || hw != app->hi_w || hh != app->hi_h) {
                 if (app->screen_hi) SDL_DestroyTexture(app->screen_hi);
@@ -293,7 +303,7 @@ static int on_retrace(void *user) {
         }
         app->hi_w = hw;
         app->hi_h = hh;
-        if (app->shots && n % (uint64_t)app->shots == 0 && n >= app->shots_from && n <= app->shots_to) {
+        if (shot) {
             save_shot(app);
             // FNV-1a of the frame, for replay regression checks.
             uint64_t h = 1469598103934665603ull;
@@ -368,8 +378,7 @@ static int on_retrace(void *user) {
     }
     if (app->exit_at && n >= app->exit_at) return 0;
     if (app->gpu && app->window) {
-        if (SDL_getenv("MK64_GPU_TEST")) gpu_present(gpu_test_target(640, 480), 640, 480, app->log_w, config.smooth);
-        else if (app->showing_hi) gpu_present(app->gpu_shown, app->hi_w, app->hi_h, app->log_w, config.smooth);
+        if (app->showing_hi) gpu_present(app->gpu_shown, app->hi_w, app->hi_h, app->log_w, config.smooth);
         else gpu_present(app->gpu_shown, FB_W, FB_H, app->log_w, config.smooth);
         if (app->show_status) {  // no text drawing on this path: the status goes to the title bar
             char line[160];
@@ -498,8 +507,10 @@ int main(int argc, char **argv) {
     // Interpolation: mk64.ini, or MK64_INTERP (headless runs default to off).
     const char *interp = SDL_getenv("MK64_INTERP");
     app.interp = interp ? SDL_atoi(interp) != 0 : !headless && config.interp;
+    rdp_set_gpu(app.gpu);
     rdp_set_scale(internal, wide ? aspect : 4.0f / 3.0f, app.interp);
-    if (internal > 1 || wide || app.interp) app.hpixels = malloc(sizeof(uint32_t) * max_w * FB_H * internal * internal);
+    // Display copies: read into hpixels by the software path; on the GPU only for screenshots.
+    if ((internal > 1 || wide || app.interp) && (!app.gpu || app.shots)) app.hpixels = malloc(sizeof(uint32_t) * max_w * FB_H * internal * internal);
     rsp_reset();
     // The audio microcode's resampling filter, at ROM 0xF5A00 in this (SHA-1 checked) ROM.
     if (!abi_init(app.rom.data, app.rom.size, 0xF5A00)) fprintf(stderr, "aviso: tabela de reamostragem nao encontrada\n");

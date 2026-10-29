@@ -46,4 +46,11 @@ void rdp_interp_begin(void);
 void rdp_interp_end(void);
 int rdp_cimg_width(void);
 
+// GPU renderer (gpu.c) for the display copies, chosen before rdp_set_scale (which then allows up
+// to 8x). The display copy (or with interp, the in-between image) of the framebuffer at `addr` is
+// then a texture: NULL when there is none, as rdp_read_framebuffer_hires / _interp.
+void rdp_set_gpu(int on);
+struct SDL_GPUTexture;
+struct SDL_GPUTexture *rdp_gpu_frame(uint32_t addr, int width, int height, int interp, uint64_t *stamp, int *out_w, int *out_h);
+
 #endif

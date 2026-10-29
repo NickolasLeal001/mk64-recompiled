@@ -66,4 +66,20 @@ typedef struct Op {
 #define OM_CYCLE_TYPE(st) (((st)->om_hi >> 20) & 3)
 enum { CYC_1, CYC_2, CYC_COPY, CYC_FILL };
 
+// Side margin of the display copy of a color image `w` pixels wide (rdp.c).
+int rdp_hi_ox(int w);
+
+// GPU renderer (gpu.c), used by rdp.c when the GPU draws the display copies. Work is queued in
+// call order and sent to the GPU by gpu_submit.
+typedef struct GpuTarget GpuTarget;
+void gpu_target_create(HiTarget *t);   // render target of t (stride x 240 * scale)
+void gpu_target_release(HiTarget *t);
+// Pixels the CPU wrote, enlarged into t: a w x h block of 1x pixels at (x0, y0), one word per
+// pixel, RGBA16 | 1 << 16 where it changed (0 elsewhere).
+void gpu_patch(HiTarget *t, int x0, int y0, int w, int h, const uint32_t *words);
+void gpu_copy_interp(HiTarget *t);     // the in-between image starts as a copy of the display copy
+void gpu_draw_ops(const Op *ops, size_t count, int interp);  // into the display copies (interp: in-between)
+void gpu_submit(void);
+struct SDL_GPUTexture *gpu_target_texture(HiTarget *t, int interp);
+
 #endif
