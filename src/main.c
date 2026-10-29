@@ -28,6 +28,7 @@ typedef struct App {
     int show_status;
     int shots;  // MK64_SHOTS=N[:from[:to]]: save a BMP every N retraces within [from, to]
     uint64_t shots_from, shots_to;
+    uint64_t exit_at;  // MK64_EXIT_AT: stop after this retrace
     SDL_AudioStream *audio;
     uint32_t audio_freq;
     FILE *wav;  // MK64_WAV: copy of everything sent to the speakers
@@ -59,7 +60,7 @@ static void finish_wav(void) {
 
 static void on_ai_buffer(void *user, uint32_t addr, uint32_t size, uint32_t freq) {
     App *app = user;
-    if (!freq || size == 0 || size > 0x10000) return;
+    if (!freq || size == 0 || size > 0x10000 || ultra_deterministic) return;
     if (!app->audio || app->audio_freq != freq) {
         SDL_AudioSpec spec = {SDL_AUDIO_S16, 2, (int)freq};
         if (!app->audio) {
@@ -144,12 +145,21 @@ static int on_retrace(void *user) {
         reported_ops = abi_unknown_ops;
         ultra_log("audio: opcodes sem tratamento (bits) 0x%08x", abi_unknown_ops);
     }
+    uint64_t n = ultra_stats.retraces;
     if (ultra_stats.framebuffer) {
         rdp_read_framebuffer(ultra_stats.framebuffer, FB_W, FB_H, app->pixels);
-        SDL_UpdateTexture(app->screen, NULL, app->pixels, FB_W * 4);
-        uint64_t n = ultra_stats.retraces;
-        if (app->shots && n % (uint64_t)app->shots == 0 && n >= app->shots_from && n <= app->shots_to) save_shot(app);
+        if (app->screen) SDL_UpdateTexture(app->screen, NULL, app->pixels, FB_W * 4);
+        if (app->shots && n % (uint64_t)app->shots == 0 && n >= app->shots_from && n <= app->shots_to) {
+            save_shot(app);
+            // FNV-1a of the frame, for replay regression checks.
+            uint64_t h = 1469598103934665603ull;
+            for (int k = 0; k < FB_W * FB_H; k++) h = (h ^ app->pixels[k]) * 1099511628211ull;
+            FILE *f = fopen("replay_hashes.txt", "a");
+            if (f) { fprintf(f, "%llu %016llx\n", (unsigned long long)n, (unsigned long long)h); fclose(f); }
+        }
     }
+    if (app->exit_at && n >= app->exit_at) return 0;
+    if (!app->renderer) return 1;  // headless
     SDL_SetRenderDrawColor(app->renderer, 0, 0, 0, 255);
     SDL_RenderClear(app->renderer);
     SDL_RenderTexture(app->renderer, app->screen, NULL, NULL);
@@ -202,15 +212,22 @@ int main(int argc, char **argv) {
         fail(SDL_GetError());
         return 1;
     }
-    char title[128];
-    SDL_snprintf(title, sizeof(title), "MK64 Port - %s (%s)", app.rom.title, app.rom.game_code);
-    if (!SDL_CreateWindowAndRenderer(title, 640, 480, SDL_WINDOW_RESIZABLE, &app.window, &app.renderer)) {
-        fail(SDL_GetError());
-        return 1;
+    // MK64_HEADLESS: no window or sound, virtual time (deterministic, faster than real time).
+    int headless = SDL_getenv("MK64_HEADLESS") != NULL;
+    ultra_deterministic = headless;
+    const char *exit_at = SDL_getenv("MK64_EXIT_AT");
+    app.exit_at = exit_at ? (uint64_t)SDL_atoi(exit_at) : 0;
+    if (!headless) {
+        char title[128];
+        SDL_snprintf(title, sizeof(title), "MK64 Port - %s (%s)", app.rom.title, app.rom.game_code);
+        if (!SDL_CreateWindowAndRenderer(title, 640, 480, SDL_WINDOW_RESIZABLE, &app.window, &app.renderer)) {
+            fail(SDL_GetError());
+            return 1;
+        }
+        SDL_SetRenderLogicalPresentation(app.renderer, FB_W, FB_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+        app.screen = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, FB_W, FB_H);
+        SDL_SetTextureScaleMode(app.screen, SDL_SCALEMODE_NEAREST);
     }
-    SDL_SetRenderLogicalPresentation(app.renderer, FB_W, FB_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
-    app.screen = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, FB_W, FB_H);
-    SDL_SetTextureScaleMode(app.screen, SDL_SCALEMODE_NEAREST);
     const char *shots = SDL_getenv("MK64_SHOTS");
     app.shots = shots ? SDL_atoi(shots) : 0;
     app.shots_to = (uint64_t)-1;

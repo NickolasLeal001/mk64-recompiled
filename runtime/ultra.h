@@ -38,6 +38,7 @@ typedef struct UltraStats {
     int threads, threads_ready;
 } UltraStats;
 
+extern int ultra_deterministic;  // set before ultra_run: virtual time, retraces when idle
 extern uint8_t *ultra_rdram;
 extern const uint8_t *ultra_rom;
 extern size_t ultra_rom_size;

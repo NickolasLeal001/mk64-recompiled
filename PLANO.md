@@ -380,3 +380,11 @@ Para cada sistema já entendido (controle → esterço → aceleração → drif
 ## Próximo passo concreto
 
 Fase 0: criar o esqueleto CMake e o verificador de SHA-1. Fase 1, item 1: listar pelo REA todos os chamadores de `FUN_80001158` e montar o `rom_map.yaml` inicial com os 3 segmentos de código já conhecidos.
+
+## Fase 7 — andamento (2026-10-28)
+
+> - Modo determinístico e sem janela: `MK64_HEADLESS=1` (tempo virtual, retrace quando nenhuma thread pode rodar) + `MK64_EXIT_AT=n`. Com `MK64_SHOTS` grava `replay_hashes.txt`.
+> - Duas execuções do roteiro título → menus → Luigi Raceway (2.600 retraces, ~32 s) deram hashes idênticos nos 8 quadros. Referência em `tests/replays/luigi_raceway_inicio.txt`.
+> - **Falta:**
+>   - executor automático que compare com a referência;
+>   - roteiros para todas as pistas, Time Trials, VS (2º controle roteirizado), Battle, pódio e EEPROM.

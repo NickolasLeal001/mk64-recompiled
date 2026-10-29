@@ -164,7 +164,14 @@ void ultra_post_event(int event) { g_pending_events |= 1u << event; }
 static LARGE_INTEGER g_qpf, g_qpc0;
 static int64_t g_time_offset;
 
+// Deterministic mode: time is virtual. A retrace happens as soon as no thread can run, and the
+// count advances with retraces plus a fixed step per read, so a run depends only on its inputs.
+int ultra_deterministic;
+static uint64_t g_virtual_count;
+#define VI_PERIOD (1.0 / 59.94)
+
 static uint64_t count64(void) {
+    if (ultra_deterministic) return g_virtual_count += 64;
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
     uint64_t ticks = (uint64_t)(now.QuadPart - g_qpc0.QuadPart);
@@ -172,6 +179,7 @@ static uint64_t count64(void) {
 }
 
 static double now_seconds(void) {
+    if (ultra_deterministic) return (double)ultra_stats.retraces * VI_PERIOD;
     LARGE_INTEGER now;
     QueryPerformanceCounter(&now);
     return (double)(now.QuadPart - g_qpc0.QuadPart) / (double)g_qpf.QuadPart;
@@ -192,7 +200,6 @@ void recomp_cop0_write(Ctx *ctx, int reg, uint32_t value) {
 
 // ---------------------------------------------------------------------------------------------
 // VI
-#define VI_PERIOD (1.0 / 59.94)
 static uint32_t g_vi_queue, g_vi_msg, g_vi_retrace = 1;
 
 // ---------------------------------------------------------------------------------------------
@@ -238,7 +245,15 @@ static void scheduler(void) {
                 if (ev & (1u << e)) deliver_event(e);
         }
         double now = now_seconds();
+        if (ultra_deterministic) {
+            // A retrace only when nothing can run, so thread interleaving never depends on speed.
+            now = pick_ready() ? -1.0 : next_vi;
+        }
         if (now >= next_vi) {
+            if (ultra_deterministic) {
+                uint64_t target = (uint64_t)((ultra_stats.retraces + 1) * (COUNT_HZ / 59.94));
+                if (g_virtual_count < target) g_virtual_count = target;
+            }
             next_vi += VI_PERIOD;
             if (now > next_vi + 0.25) next_vi = now + VI_PERIOD;  // do not try to catch up after a stall
             ultra_stats.retraces++;
@@ -257,6 +272,7 @@ static void scheduler(void) {
         for (int k = 0; k < g_thread_count; k++) ready += g_threads[k].state == T_READY;
         ultra_stats.threads_ready = ready;
         if (!t) {
+            if (ultra_deterministic) continue;
             double wait = next_vi - now_seconds();
             if (wait > 0.0005) Sleep((DWORD)(wait * 1000.0));
             continue;
