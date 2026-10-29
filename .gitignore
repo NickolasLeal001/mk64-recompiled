@@ -16,3 +16,4 @@ __pycache__/
 fase5-*.png
 shots/
 build_prof/
+mk64_runtime.log
