@@ -101,8 +101,8 @@ def recompile(rom):
 
 
 def build():
-    # The compiler's output, without the /showIncludes lines ninja fails to recognise (its prefix
-    # is in UTF-8 while cl prints it in the console code page) and the /Ob1 override notes.
+    # The compiler's output, without /Ob1 override notes and any /showIncludes line ninja did not
+    # take (build.bat sets the code page they must be in).
     t0 = time.time()
     p = subprocess.Popen(["cmd", "/c", os.path.join(ROOT, "build.bat")], cwd=ROOT, stdout=subprocess.PIPE,
                          stderr=subprocess.STDOUT)

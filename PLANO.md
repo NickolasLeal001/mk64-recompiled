@@ -438,7 +438,11 @@ Para cada sistema já entendido (controle → esterço → aceleração → drif
 >   5. roda 300 retraces sem janela.
 >
 >   Leva ~50 s com o SDL já baixado. Avisa quando o executável sai sem `glslc`, ou seja, só com o renderizador cpu.
->   - Pendência antiga: o prefixo das linhas do `/showIncludes` está em UTF-8 no `rules.ninja`, mas o `cl` o imprime na página de código do console. Por isso o ninja não registra as dependências de cabeçalho: mudar um `.h` não recompila quem o inclui. O fluxo só esconde essas linhas da saída.
+>   - Dependências de cabeçalho corrigidas. O CMake grava o prefixo do `/showIncludes` (`Observação: incluindo arquivo:`) no `rules.ninja` na página de código OEM (850). O `cl` imprime esse prefixo na página do console que o chamou. Chamado do PowerShell ou do Python, o prefixo não batia: o ninja despejava as linhas na saída e não registrava os `.h`, então mudar um cabeçalho não recompilava quem o inclui.
+>     - Agora o `build.bat` põe o console na página OEM (lida do registro) antes de compilar.
+>     - Os 59 objetos gravados sem dependências foram recompilados uma vez.
+>     - Conferido: mudar `gfx/gpu.h` recompila `main.c` e `gpu.c`, e mudar `runtime/recomp.h` recompila os 39 arquivos que o incluem.
+>     - O `VSLANG=1033` não serve aqui, porque o VS não tem o pacote de idioma inglês.
 > - **Falta:** na interpolação, partículas que nascem ou somem no quadro não são interpoladas.
 
 - Remapeamento de controle e suporte a teclado.

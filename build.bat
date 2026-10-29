@@ -13,6 +13,9 @@ if not exist "%VS%\VC\Auxiliary\Build\vcvars64.bat" (
 call "%VS%\VC\Auxiliary\Build\vcvars64.bat" >nul || exit /b 1
 set "PATH=%VS%\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin;%VS%\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja;%PATH%"
 cd /d "%~dp0"
+rem cl writes its /showIncludes lines in the console code page, and ninja only records header
+rem dependencies when they match the prefix CMake wrote to rules.ninja in the OEM code page.
+for /f "tokens=3" %%c in ('reg query "HKLM\SYSTEM\CurrentControlSet\Control\Nls\CodePage" /v OEMCP') do chcp %%c >nul
 if defined MK64_ROM (
   python -I tools\recomp\analyze.py "%MK64_ROM%" || exit /b 1
   python -I tools\recomp\recomp.py "%MK64_ROM%" generated || exit /b 1
