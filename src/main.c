@@ -26,7 +26,8 @@ typedef struct App {
     SDL_Texture *screen;
     SDL_Texture *screen_hi;  // internal resolution above 1x
     uint32_t *hpixels;
-    int showing_hi;
+    int showing_hi, hi_w, hi_h;
+    int log_w;  // logical width: 320, or 427 in widescreen
     uint8_t *rdram;
     uint32_t pixels[FB_W * FB_H];
     int show_status;
@@ -148,9 +149,8 @@ static void save_shot(App *app) {
     SDL_snprintf(name, sizeof name, "frame_%05llu.bmp", (unsigned long long)ultra_stats.retraces);
     save_bmp(name, FB_W, FB_H, app->pixels);
     if (app->showing_hi) {
-        int s = app->showing_hi;
         SDL_snprintf(name, sizeof name, "frame_%05llu_hi.bmp", (unsigned long long)ultra_stats.retraces);
-        save_bmp(name, FB_W * s, FB_H * s, app->hpixels);
+        save_bmp(name, app->hi_w, app->hi_h, app->hpixels);
     }
 }
 
@@ -179,9 +179,18 @@ static int on_retrace(void *user) {
     if (ultra_stats.framebuffer) {
         rdp_read_framebuffer(ultra_stats.framebuffer, FB_W, FB_H, app->pixels);
         if (app->screen) SDL_UpdateTexture(app->screen, NULL, app->pixels, FB_W * 4);
-        app->showing_hi = app->hpixels ? rdp_read_framebuffer_hires(ultra_stats.framebuffer, FB_W, FB_H, app->hpixels) : 0;
-        if (app->showing_hi && app->screen_hi)
-            SDL_UpdateTexture(app->screen_hi, NULL, app->hpixels, FB_W * app->showing_hi * 4);
+        int hw = 0, hh = 0;
+        app->showing_hi = app->hpixels && rdp_read_framebuffer_hires(ultra_stats.framebuffer, FB_W, FB_H, app->hpixels, &hw, &hh);
+        if (app->showing_hi && app->renderer) {
+            if (!app->screen_hi || hw != app->hi_w || hh != app->hi_h) {
+                if (app->screen_hi) SDL_DestroyTexture(app->screen_hi);
+                app->screen_hi = SDL_CreateTexture(app->renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, hw, hh);
+                SDL_SetTextureScaleMode(app->screen_hi, config.smooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
+            }
+            SDL_UpdateTexture(app->screen_hi, NULL, app->hpixels, hw * 4);
+        }
+        app->hi_w = hw;
+        app->hi_h = hh;
         if (app->shots && n % (uint64_t)app->shots == 0 && n >= app->shots_from && n <= app->shots_to) {
             save_shot(app);
             // FNV-1a of the frame, for replay regression checks.
@@ -241,7 +250,10 @@ static int on_retrace(void *user) {
     if (!app->renderer) return 1;  // headless
     SDL_SetRenderDrawColor(app->renderer, 0, 0, 0, 255);
     SDL_RenderClear(app->renderer);
-    SDL_RenderTexture(app->renderer, app->showing_hi ? app->screen_hi : app->screen, NULL, NULL);
+    // A widened display copy fills the logical area; a 4:3 one, or the 1x frame, sits in its middle.
+    SDL_FRect mid = {(app->log_w - FB_W) / 2.0f, 0, FB_W, FB_H};
+    if (app->showing_hi && app->hi_w * 3 > app->hi_h * 4) SDL_RenderTexture(app->renderer, app->screen_hi, NULL, NULL);
+    else SDL_RenderTexture(app->renderer, app->showing_hi ? app->screen_hi : app->screen, NULL, &mid);
     if (!app->show_status) {
         SDL_RenderPresent(app->renderer);
         return 1;
@@ -297,17 +309,20 @@ int main(int argc, char **argv) {
     const char *exit_at = SDL_getenv("MK64_EXIT_AT");
     app.exit_at = exit_at ? (uint64_t)SDL_atoi(exit_at) : 0;
     config_load();
+    // Widescreen: mk64.ini, or MK64_WIDESCREEN (headless runs default to 4:3).
+    const char *wide_env = SDL_getenv("MK64_WIDESCREEN");
+    app.log_w = (wide_env ? SDL_atoi(wide_env) != 0 : !headless && config.widescreen) ? 427 : FB_W;  // 16:9 at 240 lines
     if (!headless) {
         char title[128];
         SDL_snprintf(title, sizeof(title), "MK64 Port - %s (%s)", app.rom.title, app.rom.game_code);
         SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | (config.fullscreen ? SDL_WINDOW_FULLSCREEN : 0);
-        if (!SDL_CreateWindowAndRenderer(title, FB_W * config.scale, FB_H * config.scale, flags, &app.window,
+        if (!SDL_CreateWindowAndRenderer(title, app.log_w * config.scale, FB_H * config.scale, flags, &app.window,
                                          &app.renderer)) {
             fail(SDL_GetError());
             return 1;
         }
         SDL_SetRenderVSync(app.renderer, 0);
-        SDL_SetRenderLogicalPresentation(app.renderer, FB_W, FB_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+        SDL_SetRenderLogicalPresentation(app.renderer, app.log_w, FB_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
         app.screen = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, FB_W, FB_H);
         SDL_SetTextureScaleMode(app.screen, config.smooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
     }
@@ -326,15 +341,9 @@ int main(int argc, char **argv) {
     // Internal resolution: mk64.ini, or MK64_RES_SCALE (headless runs default to 1x).
     const char *res = SDL_getenv("MK64_RES_SCALE");
     int internal = res ? SDL_clamp(SDL_atoi(res), 1, 4) : headless ? 1 : config.internal;
-    rdp_set_scale(internal);
-    if (internal > 1) {
-        app.hpixels = malloc(sizeof(uint32_t) * FB_W * FB_H * internal * internal);
-        if (app.renderer) {
-            app.screen_hi = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING,
-                                              FB_W * internal, FB_H * internal);
-            SDL_SetTextureScaleMode(app.screen_hi, config.smooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
-        }
-    }
+    int wide = app.log_w != FB_W;
+    rdp_set_scale(internal, wide);
+    if (internal > 1 || wide) app.hpixels = malloc(sizeof(uint32_t) * 2 * FB_W * FB_H * internal * internal);
     rsp_reset();
     // The audio microcode's resampling filter, at ROM 0xF5A00 in this (SHA-1 checked) ROM.
     if (!abi_init(app.rom.data, app.rom.size, 0xF5A00)) fprintf(stderr, "aviso: tabela de reamostragem nao encontrada\n");

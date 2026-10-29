@@ -61,13 +61,25 @@ static ZBuf g_zbuf, g_zhi;
 // game and the replays see, and at g_scale x into a private RGBA16 image per color image address,
 // used only for display. `shadow` is the RDRAM image as of the last flush, so pixels the CPU wrote
 // in between are found and copied (enlarged) into the private image.
-typedef struct HiTarget { uint32_t addr; int w; uint16_t *color, *shadow; int pending; uint64_t used; } HiTarget;
+// Widescreen widens the private images of 320-pixel color images by `ox` pixels on each side
+// (16:9 at 240 lines); full-width scissors and rectangles reach the new edges.
+typedef struct HiTarget {
+    uint32_t addr;
+    int w, ox, stride;  // 1x width; side margin and row length in enlarged pixels
+    uint16_t *color, *shadow;
+    int pending;
+    uint64_t used;
+} HiTarget;
 #define HI_TARGETS 8
-static int g_scale = 1;
+static int g_scale = 1, g_wide, g_hires;  // g_hires: the enlarged pass runs (scale > 1 or widescreen)
 static HiTarget g_hi[HI_TARGETS];
 static uint64_t g_hi_clock;
-static __declspec(thread) int g_s = 1;               // scale of the pass being drawn
+static __declspec(thread) int g_hipass;              // drawing the enlarged pass
+static __declspec(thread) int g_s = 1, g_ox;         // its scale and side margin
 static __declspec(thread) HiTarget *g_tgt;           // its image (NULL: RDRAM)
+
+static int hi_ox(int w) { return g_wide && w == 320 ? (320 * g_scale + 3) / 6 : 0; }
+static int hi_stride(int w) { return w * g_scale + 2 * hi_ox(w); }
 
 // ---------------------------------------------------------------------------------------------
 // Othermode fields
@@ -420,22 +432,23 @@ static float *zbuffer_alloc(void) {
         rdp_flush();
         zbuf_reset(&g_zbuf, w, h);
     }
-    if (g_scale > 1 && (!g_zhi.z || g_zhi.addr != REC.zimg || g_zhi.w != w * g_scale)) {
+    if (g_hires && (!g_zhi.z || g_zhi.addr != REC.zimg || g_zhi.w != hi_stride(w))) {
         rdp_flush();
-        zbuf_reset(&g_zhi, w * g_scale, h * g_scale);
+        zbuf_reset(&g_zhi, hi_stride(w), h * g_scale);
     }
     return g_zbuf.z;
 }
 
-static ZBuf *zcur(void) { return g_s == 1 ? &g_zbuf : &g_zhi; }
+static ZBuf *zcur(void) { return g_hipass ? &g_zhi : &g_zbuf; }
 
 static float *zbuffer(void) {
     const ZBuf *zb = zcur();
-    return zb->z && zb->addr == R.zimg && zb->w == (int)R.cimg_width * g_s ? zb->z : NULL;
+    int w = g_hipass ? hi_stride((int)R.cimg_width) : (int)R.cimg_width;
+    return zb->z && zb->addr == R.zimg && zb->w == w ? zb->z : NULL;
 }
 
 // Color image pixel: RDRAM at 1x, the private image at the internal resolution.
-static uint16_t *hi_pixel(int x, int y) { return &g_tgt->color[(size_t)y * (size_t)(g_tgt->w * g_s) + (size_t)x]; }
+static uint16_t *hi_pixel(int x, int y) { return &g_tgt->color[(size_t)y * (size_t)g_tgt->stride + (size_t)x]; }
 
 static void write_pixel(int x, int y, Color comb, float shade_alpha, float z) {
     if (ALPHA_COMPARE() == 1 && comb.a < R.blend.a) return;
@@ -499,10 +512,19 @@ typedef struct Op {
     } u;
 } Op;
 
-// Scissor and primitive coordinates are in 1x pixels; kernels work in pixels of the pass (g_s).
+// Scissor and primitive coordinates are in 1x pixels; kernels work in pixels of the pass:
+// x * g_s + g_ox. A span covering the whole 1x width covers the whole widened row.
+static void span_cols(int ux0, int ux1, int *x0, int *x1) {
+    *x0 = ux0 * g_s + g_ox;
+    *x1 = ux1 * g_s + g_ox;
+    if (g_ox && ux0 <= 0 && ux1 >= (int)R.cimg_width) { *x0 = 0; *x1 = (int)R.cimg_width * g_s + 2 * g_ox; }
+}
+
 static void clip_cols(int *x0, int *x1) {
-    if (*x0 < R.sc_x0 * g_s) *x0 = R.sc_x0 * g_s;
-    if (*x1 > R.sc_x1 * g_s) *x1 = R.sc_x1 * g_s;
+    int lo, hi;
+    span_cols(R.sc_x0, R.sc_x1, &lo, &hi);
+    if (*x0 < lo) *x0 = lo;
+    if (*x1 > hi) *x1 = hi;
 }
 
 static void clip_rows(int *y0, int *y1, int by0, int by1) {
@@ -515,8 +537,20 @@ static void clip_rows(int *y0, int *y1, int by0, int by1) {
 static void draw_triangle(const Op *op, int by0, int by1) {
     RdpVertex sv[3];
     const RdpVertex *v0 = &op->u.v[0], *v1 = &op->u.v[1], *v2 = &op->u.v[2];
-    if (g_s != 1) {
-        for (int k = 0; k < 3; k++) { sv[k] = op->u.v[k]; sv[k].x *= (float)g_s; sv[k].y *= (float)g_s; }
+    if (g_hipass) {
+        // A flat (orthographic, w = 1) triangle spanning the whole width, like the sky gradient,
+        // is stretched to the widened edges; everything else keeps its place, shifted by the margin.
+        const RdpVertex *u = op->u.v;
+        float wd = (float)R.cimg_width;
+        int stretch = g_ox && u[0].invw == 1.0f && u[1].invw == 1.0f && u[2].invw == 1.0f &&
+                      fminf(u[0].x, fminf(u[1].x, u[2].x)) <= 1.0f && fmaxf(u[0].x, fmaxf(u[1].x, u[2].x)) >= wd - 1.0f;
+        for (int k = 0; k < 3; k++) {
+            sv[k] = u[k];
+            sv[k].x = sv[k].x * (float)g_s + (float)g_ox;
+            if (stretch && u[k].x <= 1.0f) sv[k].x = 0.0f;
+            if (stretch && u[k].x >= wd - 1.0f) sv[k].x = (float)(R.cimg_width * g_s + 2 * g_ox);
+            sv[k].y *= (float)g_s;
+        }
         v0 = &sv[0]; v1 = &sv[1]; v2 = &sv[2];
     }
     float area = (v1->x - v0->x) * (v2->y - v0->y) - (v2->x - v0->x) * (v1->y - v0->y);
@@ -553,7 +587,8 @@ static void draw_triangle(const Op *op, int by0, int by1) {
 }
 
 static void draw_fill(const Op *op, int by0, int by1) {
-    int x0 = op->u.rc.x0 * g_s, y0 = op->u.rc.y0 * g_s, x1 = op->u.rc.x1 * g_s, y1 = op->u.rc.y1 * g_s;
+    int x0, x1, y0 = op->u.rc.y0 * g_s, y1 = op->u.rc.y1 * g_s;
+    span_cols(op->u.rc.x0, op->u.rc.x1, &x0, &x1);
     clip_cols(&x0, &x1);
     clip_rows(&y0, &y1, by0, by1);
     if (R.cimg == R.zimg) {  // clearing the Z image
@@ -563,10 +598,10 @@ static void draw_fill(const Op *op, int by0, int by1) {
             for (int y = y0; y < y1 && y < zd->h; y++)
                 for (int x = x0; x < x1 && x < zd->w; x++) zb[y * zd->w + x] = 1.0f;
     }
-    if (g_s != 1 && !g_tgt) return;
+    if (g_hipass && !g_tgt) return;
     for (int y = y0; y < y1; y++)
         for (int x = x0; x < x1; x++) {
-            uint16_t c = (uint16_t)(((x / g_s) & 1) ? R.fill : (R.fill >> 16));
+            uint16_t c = (uint16_t)((((x - g_ox) / g_s) & 1) ? R.fill : (R.fill >> 16));
             if (g_tgt) { *hi_pixel(x, y) = c; continue; }
             uint32_t addr = R.cimg + (uint32_t)(y * (int)R.cimg_width + x) * 2;
             mem_w16(g_ram, RAM(addr), c);
@@ -575,8 +610,8 @@ static void draw_fill(const Op *op, int by0, int by1) {
 
 static void draw_rect(const Op *op, int by0, int by1) {  // 1/2-cycle FILLRECT through the combiner
     Color white = {1, 1, 1, 1};
-    int x0 = op->u.rc.x0 * g_s, x1 = op->u.rc.x1 * g_s;
-    int y0 = op->u.rc.y0 * g_s, y1 = op->u.rc.y1 * g_s;
+    int x0, x1, y0 = op->u.rc.y0 * g_s, y1 = op->u.rc.y1 * g_s;
+    span_cols(op->u.rc.x0, op->u.rc.x1, &x0, &x1);
     clip_cols(&x0, &x1);
     clip_rows(&y0, &y1, by0, by1);
     for (int y = y0; y < y1; y++)
@@ -586,14 +621,18 @@ static void draw_rect(const Op *op, int by0, int by1) {  // 1/2-cycle FILLRECT t
 static void draw_texrect(const Op *op, int by0, int by1) {
     float ulx = op->u.tr.ulx, uly = op->u.tr.uly, S = (float)g_s;
     int cyc = CYCLE_TYPE(), flip = op->u.tr.flip;
-    int x0 = (int)(ulx * S), y0 = (int)(uly * S), x1 = (int)(op->u.tr.lrx * S), y1 = (int)(op->u.tr.lry * S);
+    int x0 = (int)(ulx * S) + g_ox, y0 = (int)(uly * S), x1 = (int)(op->u.tr.lrx * S) + g_ox, y1 = (int)(op->u.tr.lry * S);
     clip_cols(&x0, &x1);
     clip_rows(&y0, &y1, by0, by1);
+    // A full-width picture (title, menus) gets black bars in the widened margins.
+    if (g_ox && g_tgt && ulx <= 0.0f && op->u.tr.lrx >= (float)R.cimg_width)
+        for (int y = y0; y < y1; y++)
+            for (int k = 0; k < g_ox; k++) { *hi_pixel(k, y) = 1; *hi_pixel(g_tgt->stride - 1 - k, y) = 1; }
     Color white = {1, 1, 1, 1};
     for (int y = y0; y < y1; y++)
         for (int x = x0; x < x1; x++) {
             // Texel position of the pixel, in 1x pixels (its center, past the first one, when enlarged).
-            float px = g_s == 1 ? (float)x : (x + 0.5f) / S - 0.5f, py = g_s == 1 ? (float)y : (y + 0.5f) / S - 0.5f;
+            float px = !g_hipass ? (float)x : (x - g_ox + 0.5f) / S - 0.5f, py = !g_hipass ? (float)y : (y + 0.5f) / S - 0.5f;
             float dx = px - ulx, dy = py - uly;
             float s = flip ? op->u.tr.s0 + dy * op->u.tr.dsdx : op->u.tr.s0 + dx * op->u.tr.dsdx;
             float t = flip ? op->u.tr.t0 + dx * op->u.tr.dtdy : op->u.tr.t0 + dy * op->u.tr.dtdy;
@@ -612,9 +651,10 @@ static void draw_texrect(const Op *op, int by0, int by1) {
 }
 
 static void draw_op(const Op *op, int by0, int by1) {
-    g_tgt = g_s == 1 ? NULL : op->hi;
+    g_tgt = g_hipass ? op->hi : NULL;
+    g_ox = g_hipass ? hi_ox((int)op->st->cimg_width) : 0;
     // The enlarged pass only draws into private images, plus the Z clears (fills of the Z image).
-    if (g_s != 1 && !g_tgt && !(op->kind == OP_FILL && op->st->cimg == op->st->zimg)) return;
+    if (g_hipass && !g_tgt && !(op->kind == OP_FILL && op->st->cimg == op->st->zimg)) return;
     g_cur = op->st;
     switch (op->kind) {
     case OP_TRI: draw_triangle(op, by0, by1); break;
@@ -651,13 +691,13 @@ static size_t hi_size(const HiTarget *t) { return (size_t)t->w * 240; }
 // Brings the private image up to date with RDRAM: pixels that differ from the shadow were written
 // by someone else (CPU, DMA) and are copied in, enlarged. With patch = 0 only the shadow is updated.
 static void hi_sync(HiTarget *t, int patch) {
-    int s = g_scale, W = t->w * s;
+    int s = g_scale, W = t->stride;
     for (size_t k = 0; k < hi_size(t); k++) {
         uint16_t c = mem_r16(g_ram, RAM(t->addr + (uint32_t)k * 2));
         if (c == t->shadow[k]) continue;
         t->shadow[k] = c;
         if (!patch) continue;
-        int x = (int)(k % (size_t)t->w) * s, y = (int)(k / (size_t)t->w) * s;
+        int x = (int)(k % (size_t)t->w) * s + t->ox, y = (int)(k / (size_t)t->w) * s;
         for (int dy = 0; dy < s; dy++)
             for (int dx = 0; dx < s; dx++) t->color[(size_t)(y + dy) * W + (size_t)(x + dx)] = c;
     }
@@ -671,7 +711,7 @@ static HiTarget *hi_find(uint32_t addr, int w) {
 
 // Private image for the current color image; the least recently used one is recycled.
 static HiTarget *hi_target(void) {
-    if (g_scale == 1 || REC.cimg == REC.zimg || REC.cimg_siz != SIZ_16 || REC.cimg_width > 1024) return NULL;
+    if (!g_hires || REC.cimg == REC.zimg || REC.cimg_siz != SIZ_16 || REC.cimg_width > 1024) return NULL;
     int w = (int)REC.cimg_width;
     HiTarget *t = hi_find(REC.cimg, w);
     if (!t) {
@@ -681,12 +721,13 @@ static HiTarget *hi_target(void) {
         if (t->pending) rdp_flush();
         free(t->color);
         free(t->shadow);
-        t->addr = REC.cimg; t->w = w;
+        t->addr = REC.cimg; t->w = w; t->ox = hi_ox(w); t->stride = hi_stride(w);
         // One spare row: like RDRAM, a primitive past the right edge spills into the next row.
-        t->color = malloc(sizeof(uint16_t) * (size_t)(w * g_scale) * (size_t)(240 * g_scale + 1));
+        size_t pixels = (size_t)t->stride * (size_t)(240 * g_scale + 1);
+        t->color = malloc(sizeof(uint16_t) * pixels);
         t->shadow = malloc(sizeof(uint16_t) * hi_size(t));
         memset(t->shadow, 0, sizeof(uint16_t) * hi_size(t));
-        memset(t->color, 0, sizeof(uint16_t) * (size_t)(w * g_scale) * (size_t)(240 * g_scale + 1));
+        memset(t->color, 0, sizeof(uint16_t) * pixels);
         t->pending = 0;
     }
     t->used = ++g_hi_clock;
@@ -694,9 +735,11 @@ static HiTarget *hi_target(void) {
     return t;
 }
 
-void rdp_set_scale(int scale) {
+void rdp_set_scale(int scale, int widescreen) {
     rdp_flush();
     g_scale = scale < 1 ? 1 : scale > 4 ? 4 : scale;
+    g_wide = widescreen != 0;
+    g_hires = g_scale > 1 || g_wide;
     for (int k = 0; k < HI_TARGETS; k++) {
         free(g_hi[k].color);
         free(g_hi[k].shadow);
@@ -732,23 +775,26 @@ static Op *record(int kind, int tile) {
 
 static int g_threads;
 
-typedef struct Band { int y0, y1, s; } Band;
+typedef struct Band { int y0, y1, s, hi; } Band;
 
 static unsigned __stdcall band_worker(void *arg) {
     const Band *b = arg;
     g_s = b->s;
+    g_hipass = b->hi;
     for (size_t k = 0; k < g_op_count; k++) draw_op(&g_ops[k], b->y0, b->y1);
     g_cur = &REC;
     g_s = 1;
+    g_ox = 0;
+    g_hipass = 0;
     g_tgt = NULL;
     return 0;
 }
 
-static void draw_pass(int s) {
+static void draw_pass(int s, int hi) {
     Band bands[16];
     HANDLE handles[16];
     int n = g_threads, rows = 240 * s;
-    for (int k = 0; k < n; k++) { bands[k].y0 = rows * k / n; bands[k].y1 = rows * (k + 1) / n; bands[k].s = s; }
+    for (int k = 0; k < n; k++) { bands[k].y0 = rows * k / n; bands[k].y1 = rows * (k + 1) / n; bands[k].s = s; bands[k].hi = hi; }
     for (int k = 1; k < n; k++) handles[k] = (HANDLE)_beginthreadex(NULL, 0, band_worker, &bands[k], 0, NULL);
     band_worker(&bands[0]);
     if (n > 1) WaitForMultipleObjects((DWORD)(n - 1), &handles[1], TRUE, INFINITE);
@@ -772,9 +818,9 @@ void rdp_flush(void) {
         // Private images first take what others wrote to RDRAM since the last flush.
         for (int k = 0; k < HI_TARGETS; k++)
             if (g_hi[k].pending) hi_sync(&g_hi[k], 1);
-        draw_pass(1);
-        if (g_scale > 1) {
-            draw_pass(g_scale);
+        draw_pass(1, 0);
+        if (g_hires) {
+            draw_pass(g_scale, 1);
             for (int k = 0; k < HI_TARGETS; k++)
                 if (g_hi[k].pending) { hi_sync(&g_hi[k], 0); g_hi[k].pending = 0; }
         }
@@ -908,19 +954,21 @@ void rdp_read_framebuffer(uint32_t addr, int width, int height, uint32_t *out) {
         }
 }
 
-int rdp_read_framebuffer_hires(uint32_t addr, int width, int height, uint32_t *out) {
-    if (g_scale == 1) return 0;
+int rdp_read_framebuffer_hires(uint32_t addr, int width, int height, uint32_t *out, int *out_w, int *out_h) {
+    if (!g_hires) return 0;
     rdp_flush();
     HiTarget *t = hi_find(addr & 0x00FFFFFFu, width);
     if (!t || height > 240) return 0;
     hi_sync(t, 1);
-    int W = width * g_scale, H = height * g_scale;
+    int W = t->stride, H = height * g_scale;
+    *out_w = W;
+    *out_h = H;
     for (int k = 0; k < W * H; k++) {
         uint16_t c = t->color[k];
         uint32_t r = ((c >> 11) & 31) * 255 / 31, g = ((c >> 6) & 31) * 255 / 31, b = ((c >> 1) & 31) * 255 / 31;
         out[k] = 0xFF000000u | (b << 16) | (g << 8) | r;
     }
-    return g_scale;
+    return 1;
 }
 
 int rdp_tile_size(int tile, int *w, int *h) {
