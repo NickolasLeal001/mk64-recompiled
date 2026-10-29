@@ -300,7 +300,7 @@ Substitui o sistema operacional e o hardware do N64:
 >   - na música do título, picos em 209/393/589/772/956 Hz, série harmônica de ~196 Hz;
 >   - clipping ≤ 0,05%;
 >   - fila do dispositivo estável em ~13–16 ms (sem atraso crescente).
-> - **Não feito:** escuta humana e comparação com emulador. Ficam para a validação da fase 8.
+> - **Escuta humana:** aprovada em 2026-10-29, depois das duas correções abaixo. A comparação com emulador fica para a fase 8.
 > - **Correção (2026-10-29, depois da primeira escuta: "só ruído"):** no microcódigo do MK64, o INTERLEAVE (`0d000000 llllrrrr`) usa o destino e o tamanho do SETBUFF anterior. Antes, os campos zerados da 1ª palavra eram lidos como destino e tamanho, nada era intercalado e o SAVEBUFF mandava lixo da DMEM para a saída. O ENVMIXER agora alinha a contagem a 8 amostras, e o reverb vai para o mesmo lado, ou para o lado oposto só com o bit de troca. A variação entre amostras vizinhas caiu de 0,57 para 0,25–0,35 da amplitude. `MK64_WAV` passou a gravar também no modo sem janela.
 > - **Correção 2 (2026-10-29, "ainda tem problema"):**
 >   - O HLE foi alinhado à variante do MK64 no HLE do Mupen64Plus (`nead_mk`): o ENVSETUP1 não tem rampa de reverb (antes o volume do reverb dava voltas a cada 8 amostras), o ENVMIXER inverte o sinal pelos bits 1/0 e não troca os canais do reverb, e LOADBUFF/SAVEBUFF alinham os endereços como DMA (RAM a 8 bytes, DMEM a 4) com contagem de 12 bits. Também entraram o ADPCM de 2 bits e as contagens de CLEARBUFF, DMEMMOVE e INTERL.

@@ -30,90 +30,100 @@ RSP task #10 type=2 ucode=0x800db830 data=0x803bfa30 size=0x110
 RSP task #11 type=2 ucode=0x800db830 data=0x803bbd30 size=0x110
 RSP task #12 type=2 ucode=0x800db830 data=0x803bfa30 size=0x110
 osAiSetFrequency 26800 -> 26807 Hz
-retrace 300: 27.0 quadros/s
 osAiSetFrequency 26800 -> 26807 Hz
-RSP task #600 type=2 ucode=0x800db830 data=0x803bbd30 size=0x11c8
-retrace 600: 26.4 quadros/s
-audio: fila 696 bytes (6 ms)
-RSP task #1200 type=2 ucode=0x800db830 data=0x803bbd30 size=0xc08
-retrace 900: 30.0 quadros/s
+retrace 300: 24.2 quadros/s
+RSP task #600 type=2 ucode=0x800db830 data=0x803bbd30 size=0x1310
+retrace 600: 29.8 quadros/s
+audio: fila 32 ms, 0 vezes vazia, 9.9 s de som nos ultimos 600 retraces
+render: 15.19 ms por quadro (media de 300)
+osAiSetFrequency 26800 -> 26807 Hz
+RSP task #1200 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xe90
+retrace 900: 27.2 quadros/s
 retrace 1200: 30.0 quadros/s
-audio: fila 680 bytes (6 ms)
-RSP task #1800 type=2 ucode=0x800db830 data=0x803bbd30 size=0xb78
-retrace 1500: 29.8 quadros/s
-RSP task #2400 type=2 ucode=0x800db830 data=0x803bbd30 size=0xdd8
-osAiSetFrequency 26800 -> 26807 Hz
-retrace 1800: 27.2 quadros/s
-audio: fila 28 bytes (0 ms)
-RSP task #3000 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xd98
-retrace 2100: 29.8 quadros/s
-retrace 2400: 29.0 quadros/s
-audio: fila 812 bytes (8 ms)
-RSP task #3600 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xd08
-retrace 2700: 29.0 quadros/s
-RSP task #4200 type=2 ucode=0x800db830 data=0x803bb0b0 size=0x868
+audio: fila 47 ms, 0 vezes vazia, 10.0 s de som nos ultimos 600 retraces
+RSP task #1800 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xf98
+render: 19.80 ms por quadro (media de 300)
+retrace 1500: 28.8 quadros/s
+RSP task #2400 type=2 ucode=0x800db830 data=0x803bb0b0 size=0x920
+retrace 1800: 30.0 quadros/s
+audio: fila 29 ms, 0 vezes vazia, 10.0 s de som nos ultimos 600 retraces
+render: 21.38 ms por quadro (media de 300)
+RSP task #3000 type=2 ucode=0x800db830 data=0x803bb0b0 size=0x920
+retrace 2100: 30.0 quadros/s
+retrace 2400: 29.8 quadros/s
+audio: fila 48 ms, 0 vezes vazia, 10.0 s de som nos ultimos 600 retraces
+RSP task #3600 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xb38
+render: 22.35 ms por quadro (media de 300)
+retrace 2700: 30.0 quadros/s
+RSP task #4200 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xf28
 retrace 3000: 30.0 quadros/s
-audio: fila 636 bytes (6 ms)
-RSP task #4800 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xb98
+audio: fila 48 ms, 0 vezes vazia, 10.0 s de som nos ultimos 600 retraces
+render: 22.68 ms por quadro (media de 300)
+RSP task #4800 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xad0
 retrace 3300: 30.0 quadros/s
 retrace 3600: 30.0 quadros/s
-audio: fila 632 bytes (6 ms)
-RSP task #5400 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xba8
+audio: fila 47 ms, 0 vezes vazia, 10.0 s de som nos ultimos 600 retraces
+RSP task #5400 type=2 ucode=0x800db830 data=0x803bb0b0 size=0x920
+render: 22.69 ms por quadro (media de 300)
 retrace 3900: 30.0 quadros/s
-RSP task #6000 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xad0
+RSP task #6000 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xf50
 retrace 4200: 30.0 quadros/s
-audio: fila 632 bytes (6 ms)
-RSP task #6600 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xf80
+audio: fila 45 ms, 0 vezes vazia, 10.0 s de som nos ultimos 600 retraces
+render: 21.22 ms por quadro (media de 300)
+RSP task #6600 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xaf0
 retrace 4500: 30.0 quadros/s
-retrace 4800: 28.2 quadros/s
-audio: fila 28 bytes (0 ms)
-RSP task #7200 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xff8
-retrace 5100: 29.6 quadros/s
-RSP task #7800 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xed0
-retrace 5400: 30.0 quadros/s
-audio: fila 1832 bytes (17 ms)
-RSP task #8400 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xe48
+retrace 4800: 30.0 quadros/s
+audio: fila 51 ms, 0 vezes vazia, 10.0 s de som nos ultimos 600 retraces
+RSP task #7200 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xd58
+render: 22.63 ms por quadro (media de 300)
+retrace 5100: 29.4 quadros/s
+RSP task #7800 type=1 ucode=0x800d9040 data=0x80117920 size=0x23b8
+retrace 5400: 29.8 quadros/s
+audio: fila 42 ms, 0 vezes vazia, 10.0 s de som nos ultimos 600 retraces
+render: 21.61 ms por quadro (media de 300)
+RSP task #8400 type=1 ucode=0x800d9040 data=0x80117920 size=0x2118
 retrace 5700: 30.0 quadros/s
 retrace 6000: 30.0 quadros/s
-audio: fila 1756 bytes (16 ms)
-RSP task #9000 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xb80
-retrace 6300: 30.0 quadros/s
-RSP task #9600 type=1 ucode=0x800d9040 data=0x80117920 size=0x2520
-retrace 6600: 28.6 quadros/s
-audio: fila 632 bytes (6 ms)
-retrace 6900: 29.8 quadros/s
-RSP task #10200 type=1 ucode=0x800d9040 data=0x80117920 size=0x2898
-retrace 7200: 29.6 quadros/s
-audio: fila 328 bytes (3 ms)
-RSP task #10800 type=2 ucode=0x800db830 data=0x803bdeb0 size=0xd78
-retrace 7500: 29.0 quadros/s
-RSP task #11400 type=2 ucode=0x800db830 data=0x803bdeb0 size=0xcf8
+audio: fila 43 ms, 0 vezes vazia, 10.0 s de som nos ultimos 600 retraces
+RSP task #9000 type=1 ucode=0x800d9040 data=0x80117920 size=0x1f20
+render: 22.71 ms por quadro (media de 300)
+retrace 6300: 29.8 quadros/s
+RSP task #9600 type=1 ucode=0x800d9040 data=0x80117920 size=0x1e38
+retrace 6600: 30.0 quadros/s
+audio: fila 26 ms, 0 vezes vazia, 10.0 s de som nos ultimos 600 retraces
+render: 21.72 ms por quadro (media de 300)
+RSP task #10200 type=1 ucode=0x800d9040 data=0x80117920 size=0x2608
+retrace 6900: 29.6 quadros/s
+retrace 7200: 30.0 quadros/s
+audio: fila 38 ms, 0 vezes vazia, 10.0 s de som nos ultimos 600 retraces
+RSP task #10800 type=1 ucode=0x800d9040 data=0x80117920 size=0x1cc0
+render: 22.25 ms por quadro (media de 300)
+retrace 7500: 30.0 quadros/s
+RSP task #11400 type=1 ucode=0x800d9040 data=0x80117920 size=0x1e80
 retrace 7800: 30.0 quadros/s
-audio: fila 632 bytes (6 ms)
-retrace 8100: 30.0 quadros/s
-RSP task #12000 type=2 ucode=0x800db830 data=0x803bdeb0 size=0xc58
-retrace 8400: 27.8 quadros/s
-audio: fila 2376 bytes (22 ms)
-RSP task #12600 type=2 ucode=0x800db830 data=0x803bdeb0 size=0xf28
+audio: fila 34 ms, 0 vezes vazia, 10.0 s de som nos ultimos 600 retraces
+render: 21.40 ms por quadro (media de 300)
+RSP task #12000 type=1 ucode=0x800d9040 data=0x80117920 size=0x2180
+retrace 8100: 29.8 quadros/s
+retrace 8400: 30.0 quadros/s
+audio: fila 50 ms, 0 vezes vazia, 10.0 s de som nos ultimos 600 retraces
+RSP task #12600 type=1 ucode=0x800d9040 data=0x80117920 size=0x1f20
+render: 22.65 ms por quadro (media de 300)
 retrace 8700: 30.0 quadros/s
-RSP task #13200 type=2 ucode=0x800db830 data=0x803bdeb0 size=0xf08
+RSP task #13200 type=1 ucode=0x800d9040 data=0x80117920 size=0x1b30
 retrace 9000: 30.0 quadros/s
-audio: fila 2120 bytes (20 ms)
+audio: fila 50 ms, 0 vezes vazia, 10.0 s de som nos ultimos 600 retraces
+render: 22.93 ms por quadro (media de 300)
+RSP task #13800 type=1 ucode=0x800d9040 data=0x80117920 size=0x2538
 retrace 9300: 30.0 quadros/s
-RSP task #13800 type=2 ucode=0x800db830 data=0x803bdeb0 size=0xbf8
-retrace 9600: 29.2 quadros/s
-audio: fila 700 bytes (7 ms)
-RSP task #14400 type=2 ucode=0x800db830 data=0x803bdeb0 size=0xd10
-retrace 9900: 29.4 quadros/s
-RSP task #15000 type=2 ucode=0x800db830 data=0x803bdeb0 size=0xc80
-retrace 10200: 27.8 quadros/s
-audio: fila 2124 bytes (20 ms)
-retrace 10500: 29.0 quadros/s
-RSP task #15600 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xbf0
-retrace 10800: 29.8 quadros/s
-audio: fila 632 bytes (6 ms)
-RSP task #16200 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xd10
-retrace 11100: 29.0 quadros/s
-retrace 11400: 30.0 quadros/s
-audio: fila 1756 bytes (16 ms)
-RSP task #16800 type=2 ucode=0x800db830 data=0x803bb0b0 size=0x5d0
+retrace 9600: 30.0 quadros/s
+audio: fila 48 ms, 0 vezes vazia, 10.0 s de som nos ultimos 600 retraces
+RSP task #14400 type=1 ucode=0x800d9040 data=0x80117920 size=0x24c8
+render: 22.26 ms por quadro (media de 300)
+retrace 9900: 29.8 quadros/s
+RSP task #15000 type=1 ucode=0x800d9040 data=0x80117920 size=0x2920
+retrace 10200: 29.2 quadros/s
+audio: fila 12 ms, 0 vezes vazia, 9.9 s de som nos ultimos 600 retraces
+render: 19.66 ms por quadro (media de 300)
+RSP task #15600 type=1 ucode=0x800da420 data=0x80117920 size=0x1868
+retrace 10500: 29.2 quadros/s
