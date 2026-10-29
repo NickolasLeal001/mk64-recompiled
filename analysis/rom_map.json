@@ -1,0 +1,679 @@
+{
+ "rom_sha1": "579c48e211ae952530ffc8738709f078d5dd215e",
+ "rom_size": "0xc00000",
+ "regions": [
+  {
+   "name": "header",
+   "kind": "header",
+   "rom_start": "0x0",
+   "rom_end": "0x40",
+   "evidence": "N64 header: MARIOKART64 / NKTE"
+  },
+  {
+   "name": "ipl3",
+   "kind": "boot",
+   "rom_start": "0x40",
+   "rom_end": "0x1000",
+   "evidence": "IPL3 boot code, present in every retail ROM"
+  },
+  {
+   "name": "main",
+   "kind": "code",
+   "rom_start": "0x1000",
+   "rom_end": "0xf7510",
+   "evidence": "entry 0x80000400 clears BSS 0x800f6910+0xa0fc0 (rizin ev_1e55e6d2)",
+   "vram": "0x80000400",
+   "vram_size": "0x1974d0"
+  },
+  {
+   "name": "racing",
+   "kind": "code",
+   "rom_start": "0xf7510",
+   "rom_end": "0x123640",
+   "evidence": "FUN_800010cc: FUN_80001158(0x8028df00, 0xf7510, 0x2c130)",
+   "vram": "0x8028df00",
+   "vram_size": "0x2c470"
+  },
+  {
+   "name": "seg3",
+   "kind": "code",
+   "rom_start": "0x123640",
+   "rom_end": "0x12aae0",
+   "evidence": "FUN_8000105c: FUN_80001158(0x80280000, 0x123640, 0x74a0)",
+   "vram": "0x80280000",
+   "vram_size": "0x74a0"
+  },
+  {
+   "name": "common_data",
+   "kind": "data",
+   "rom_start": "0x12aae0",
+   "rom_end": "0x132b50",
+   "evidence": "FUN_80001264: FUN_802a7d70(0x12aae0, 0x132b50) -> heap, registered as segment"
+  },
+  {
+   "name": "startup_mio0",
+   "kind": "mio0",
+   "rom_start": "0x132b50",
+   "rom_end": "0x145470",
+   "evidence": "FUN_80001264: DMA 0x132b50 -> 0x8027b5e0 size 0x12920; MIO0 header at 0x132b50",
+   "vram": "0x8027b5e0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x1291f"
+  },
+  {
+   "name": "bank_0x145470",
+   "kind": "bank",
+   "rom_start": "0x145470",
+   "rom_end": "0x641f70",
+   "evidence": "FUN_80027040/80027560/80027a20/80004ef0: (addr & 0xffffff) + 0x145470; indexed by player character (+0x254)",
+   "end_is_inferred": true,
+   "mio0_blocks": 2568,
+   "mio0_bytes": "0x3d6296"
+  },
+  {
+   "name": "bank_0x641f70",
+   "kind": "bank",
+   "rom_start": "0x641f70",
+   "rom_end": "0x724220",
+   "evidence": "FUN_8006ed94/802a84f4/802a85cc: (addr & 0xffffff) + 0x641f70, decompressed into the heap",
+   "end_is_inferred": true,
+   "mio0_blocks": 418,
+   "mio0_bytes": "0x6fd57"
+  },
+  {
+   "name": "fixed_0x724220",
+   "kind": "data",
+   "rom_start": "0x724220",
+   "rom_end": "0x729a30",
+   "evidence": "FUN_80001264: DMA 0x724220 -> 0x802ba370 size 0x5810",
+   "vram": "0x802ba370",
+   "vram_size": "0x5810"
+  },
+  {
+   "name": "bank_0x729a30",
+   "kind": "bank",
+   "rom_start": "0x729a30",
+   "rom_end": "0x7fa3c0",
+   "evidence": "FUN_80099000/80099aec/80099ec4: (addr & 0xffffff) + 0x729a30",
+   "end_is_inferred": true,
+   "mio0_blocks": 325,
+   "mio0_bytes": "0xbd014"
+  },
+  {
+   "name": "bank_0x7fa3c0",
+   "kind": "bank",
+   "rom_start": "0x7fa3c0",
+   "rom_end": "0x8284d0",
+   "evidence": "FUN_80099088: (addr & 0xffffff) + 0x7fa3c0",
+   "end_is_inferred": true,
+   "mio0_blocks": 2,
+   "mio0_bytes": "0x67b0"
+  },
+  {
+   "name": "course00_geo",
+   "kind": "course",
+   "rom_start": "0x8284d0",
+   "rom_end": "0x82b620",
+   "evidence": "course table 0x802b8d80[0] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x3147"
+  },
+  {
+   "name": "course01_geo",
+   "kind": "course",
+   "rom_start": "0x82b620",
+   "rom_end": "0x82df40",
+   "evidence": "course table 0x802b8d80[1] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x291f"
+  },
+  {
+   "name": "course02_geo",
+   "kind": "course",
+   "rom_start": "0x82df40",
+   "rom_end": "0x831dc0",
+   "evidence": "course table 0x802b8d80[2] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x3e7b"
+  },
+  {
+   "name": "course03_geo",
+   "kind": "course",
+   "rom_start": "0x831dc0",
+   "rom_end": "0x835ba0",
+   "evidence": "course table 0x802b8d80[3] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x3dd5"
+  },
+  {
+   "name": "course04_geo",
+   "kind": "course",
+   "rom_start": "0x835ba0",
+   "rom_end": "0x83f740",
+   "evidence": "course table 0x802b8d80[4] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x9b95"
+  },
+  {
+   "name": "course05_geo",
+   "kind": "course",
+   "rom_start": "0x83f740",
+   "rom_end": "0x842e40",
+   "evidence": "course table 0x802b8d80[5] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x36f9"
+  },
+  {
+   "name": "course06_geo",
+   "kind": "course",
+   "rom_start": "0x842e40",
+   "rom_end": "0x84abd0",
+   "evidence": "course table 0x802b8d80[6] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x7d8c"
+  },
+  {
+   "name": "course07_geo",
+   "kind": "course",
+   "rom_start": "0x84abd0",
+   "rom_end": "0x84e8e0",
+   "evidence": "course table 0x802b8d80[7] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x3d03"
+  },
+  {
+   "name": "course08_geo",
+   "kind": "course",
+   "rom_start": "0x84e8e0",
+   "rom_end": "0x852e20",
+   "evidence": "course table 0x802b8d80[8] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x4540"
+  },
+  {
+   "name": "course09_geo",
+   "kind": "course",
+   "rom_start": "0x852e20",
+   "rom_end": "0x857e80",
+   "evidence": "course table 0x802b8d80[9] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x505a"
+  },
+  {
+   "name": "course10_geo",
+   "kind": "course",
+   "rom_start": "0x857e80",
+   "rom_end": "0x8666a0",
+   "evidence": "course table 0x802b8d80[10] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0xe816"
+  },
+  {
+   "name": "course11_geo",
+   "kind": "course",
+   "rom_start": "0x8666a0",
+   "rom_end": "0x86ecf0",
+   "evidence": "course table 0x802b8d80[11] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x8644"
+  },
+  {
+   "name": "course12_geo",
+   "kind": "course",
+   "rom_start": "0x86ecf0",
+   "rom_end": "0x872a00",
+   "evidence": "course table 0x802b8d80[12] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x3d0b"
+  },
+  {
+   "name": "course13_geo",
+   "kind": "course",
+   "rom_start": "0x872a00",
+   "rom_end": "0x8804a0",
+   "evidence": "course table 0x802b8d80[13] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0xda9d"
+  },
+  {
+   "name": "course14_geo",
+   "kind": "course",
+   "rom_start": "0x8804a0",
+   "rom_end": "0x885630",
+   "evidence": "course table 0x802b8d80[14] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x5185"
+  },
+  {
+   "name": "course15_geo",
+   "kind": "course",
+   "rom_start": "0x885630",
+   "rom_end": "0x885780",
+   "evidence": "course table 0x802b8d80[15] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x142"
+  },
+  {
+   "name": "course16_geo",
+   "kind": "course",
+   "rom_start": "0x885780",
+   "rom_end": "0x8858a0",
+   "evidence": "course table 0x802b8d80[16] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x115"
+  },
+  {
+   "name": "course17_geo",
+   "kind": "course",
+   "rom_start": "0x8858a0",
+   "rom_end": "0x885a10",
+   "evidence": "course table 0x802b8d80[17] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x166"
+  },
+  {
+   "name": "course18_geo",
+   "kind": "course",
+   "rom_start": "0x885a10",
+   "rom_end": "0x88cc50",
+   "evidence": "course table 0x802b8d80[18] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x723b"
+  },
+  {
+   "name": "course19_geo",
+   "kind": "course",
+   "rom_start": "0x88cc50",
+   "rom_end": "0x88cd70",
+   "evidence": "course table 0x802b8d80[19] (FUN_802aa918) +0x0",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x11b"
+  },
+  {
+   "name": "course00_seg9",
+   "kind": "course",
+   "rom_start": "0x88cd70",
+   "rom_end": "0x88d070",
+   "evidence": "course table 0x802b8d80[0] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course01_seg9",
+   "kind": "course",
+   "rom_start": "0x88d070",
+   "rom_end": "0x88d340",
+   "evidence": "course table 0x802b8d80[1] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course02_seg9",
+   "kind": "course",
+   "rom_start": "0x88d340",
+   "rom_end": "0x88d6c0",
+   "evidence": "course table 0x802b8d80[2] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course03_seg9",
+   "kind": "course",
+   "rom_start": "0x88d6c0",
+   "rom_end": "0x88d9c0",
+   "evidence": "course table 0x802b8d80[3] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course04_seg9",
+   "kind": "course",
+   "rom_start": "0x88d9c0",
+   "rom_end": "0x88dab0",
+   "evidence": "course table 0x802b8d80[4] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course05_seg9",
+   "kind": "course",
+   "rom_start": "0x88dab0",
+   "rom_end": "0x88db40",
+   "evidence": "course table 0x802b8d80[5] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course06_seg9",
+   "kind": "course",
+   "rom_start": "0x88db40",
+   "rom_end": "0x88dc50",
+   "evidence": "course table 0x802b8d80[6] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course07_seg9",
+   "kind": "course",
+   "rom_start": "0x88dc50",
+   "rom_end": "0x88e120",
+   "evidence": "course table 0x802b8d80[7] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course08_seg9",
+   "kind": "course",
+   "rom_start": "0x88e120",
+   "rom_end": "0x88e590",
+   "evidence": "course table 0x802b8d80[8] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course09_seg9",
+   "kind": "course",
+   "rom_start": "0x88e590",
+   "rom_end": "0x88e8d0",
+   "evidence": "course table 0x802b8d80[9] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course10_seg9",
+   "kind": "course",
+   "rom_start": "0x88e8d0",
+   "rom_end": "0x88ecd0",
+   "evidence": "course table 0x802b8d80[10] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course11_seg9",
+   "kind": "course",
+   "rom_start": "0x88ecd0",
+   "rom_end": "0x88efb0",
+   "evidence": "course table 0x802b8d80[11] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course12_seg9",
+   "kind": "course",
+   "rom_start": "0x88efb0",
+   "rom_end": "0x88f2a0",
+   "evidence": "course table 0x802b8d80[12] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course13_seg9",
+   "kind": "course",
+   "rom_start": "0x88f2a0",
+   "rom_end": "0x88f300",
+   "evidence": "course table 0x802b8d80[13] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course14_seg9",
+   "kind": "course",
+   "rom_start": "0x88f300",
+   "rom_end": "0x88f600",
+   "evidence": "course table 0x802b8d80[14] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course15_seg9",
+   "kind": "course",
+   "rom_start": "0x88f600",
+   "rom_end": "0x88f680",
+   "evidence": "course table 0x802b8d80[15] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course16_seg9",
+   "kind": "course",
+   "rom_start": "0x88f680",
+   "rom_end": "0x88f800",
+   "evidence": "course table 0x802b8d80[16] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course17_seg9",
+   "kind": "course",
+   "rom_start": "0x88f800",
+   "rom_end": "0x88f830",
+   "evidence": "course table 0x802b8d80[17] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course18_seg9",
+   "kind": "course",
+   "rom_start": "0x88f830",
+   "rom_end": "0x88f9c0",
+   "evidence": "course table 0x802b8d80[18] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course19_seg9",
+   "kind": "course",
+   "rom_start": "0x88f9c0",
+   "rom_end": "0x88fa10",
+   "evidence": "course table 0x802b8d80[19] (FUN_802aa918) +0x10"
+  },
+  {
+   "name": "course00_packed",
+   "kind": "course",
+   "rom_start": "0x88fa10",
+   "rom_end": "0x89b510",
+   "evidence": "course table 0x802b8d80[0] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x96f4"
+  },
+  {
+   "name": "course01_packed",
+   "kind": "course",
+   "rom_start": "0x89b510",
+   "rom_end": "0x8a7640",
+   "evidence": "course table 0x802b8d80[1] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0xa0b4"
+  },
+  {
+   "name": "course02_packed",
+   "kind": "course",
+   "rom_start": "0x8a7640",
+   "rom_end": "0x8b9630",
+   "evidence": "course table 0x802b8d80[2] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0xe366"
+  },
+  {
+   "name": "course03_packed",
+   "kind": "course",
+   "rom_start": "0x8b9630",
+   "rom_end": "0x8c2510",
+   "evidence": "course table 0x802b8d80[3] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x68e5"
+  },
+  {
+   "name": "course04_packed",
+   "kind": "course",
+   "rom_start": "0x8c2510",
+   "rom_end": "0x8cc900",
+   "evidence": "course table 0x802b8d80[4] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x7d8e"
+  },
+  {
+   "name": "course05_packed",
+   "kind": "course",
+   "rom_start": "0x8cc900",
+   "rom_end": "0x8d8e50",
+   "evidence": "course table 0x802b8d80[5] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x9d22"
+  },
+  {
+   "name": "course06_packed",
+   "kind": "course",
+   "rom_start": "0x8d8e50",
+   "rom_end": "0x8ec390",
+   "evidence": "course table 0x802b8d80[6] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0xfd78"
+  },
+  {
+   "name": "course07_packed",
+   "kind": "course",
+   "rom_start": "0x8ec390",
+   "rom_end": "0x8fe640",
+   "evidence": "course table 0x802b8d80[7] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0xec5e"
+  },
+  {
+   "name": "course08_packed",
+   "kind": "course",
+   "rom_start": "0x8fe640",
+   "rom_end": "0x90b3e0",
+   "evidence": "course table 0x802b8d80[8] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x9800"
+  },
+  {
+   "name": "course09_packed",
+   "kind": "course",
+   "rom_start": "0x90b3e0",
+   "rom_end": "0x91b980",
+   "evidence": "course table 0x802b8d80[9] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0xdaeb"
+  },
+  {
+   "name": "course10_packed",
+   "kind": "course",
+   "rom_start": "0x91b980",
+   "rom_end": "0x928c70",
+   "evidence": "course table 0x802b8d80[10] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0xa5cf"
+  },
+  {
+   "name": "course11_packed",
+   "kind": "course",
+   "rom_start": "0x928c70",
+   "rom_end": "0x936fd0",
+   "evidence": "course table 0x802b8d80[11] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0xb394"
+  },
+  {
+   "name": "course12_packed",
+   "kind": "course",
+   "rom_start": "0x936fd0",
+   "rom_end": "0x93cc60",
+   "evidence": "course table 0x802b8d80[12] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x49f5"
+  },
+  {
+   "name": "course13_packed",
+   "kind": "course",
+   "rom_start": "0x93cc60",
+   "rom_end": "0x9438c0",
+   "evidence": "course table 0x802b8d80[13] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x5a5a"
+  },
+  {
+   "name": "course14_packed",
+   "kind": "course",
+   "rom_start": "0x9438c0",
+   "rom_end": "0x951780",
+   "evidence": "course table 0x802b8d80[14] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0xa9ca"
+  },
+  {
+   "name": "course15_packed",
+   "kind": "course",
+   "rom_start": "0x951780",
+   "rom_end": "0x953890",
+   "evidence": "course table 0x802b8d80[15] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x18d8"
+  },
+  {
+   "name": "course16_packed",
+   "kind": "course",
+   "rom_start": "0x953890",
+   "rom_end": "0x955620",
+   "evidence": "course table 0x802b8d80[16] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x1677"
+  },
+  {
+   "name": "course17_packed",
+   "kind": "course",
+   "rom_start": "0x955620",
+   "rom_end": "0x956670",
+   "evidence": "course table 0x802b8d80[17] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0xcd4"
+  },
+  {
+   "name": "course18_packed",
+   "kind": "course",
+   "rom_start": "0x956670",
+   "rom_end": "0x963ef0",
+   "evidence": "course table 0x802b8d80[18] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0xa459"
+  },
+  {
+   "name": "course19_packed",
+   "kind": "course",
+   "rom_start": "0x963ef0",
+   "rom_end": "0x966260",
+   "evidence": "course table 0x802b8d80[19] (FUN_802aa918) +0x8",
+   "mio0_blocks": 1,
+   "mio0_bytes": "0x1b82"
+  },
+  {
+   "name": "audio_banks",
+   "kind": "audio",
+   "rom_start": "0x966260",
+   "rom_end": "0x979a70",
+   "entries": 21,
+   "evidence": "FUN_800baa80(0x966260, ...) / FUN_800bb43c(_DAT_803b7070, 0x966260)"
+  },
+  {
+   "name": "pad_979a70",
+   "kind": "padding",
+   "rom_start": "0x979a70",
+   "rom_end": "0x979aa0",
+   "evidence": "all bytes 0x00"
+  },
+  {
+   "name": "audio_samples",
+   "kind": "audio",
+   "rom_start": "0x979aa0",
+   "rom_end": "0xbc5f40",
+   "entries": 21,
+   "evidence": "FUN_800baa80(0x979aa0, ...) / FUN_800bb43c(_DAT_803b7074, 0x979aa0)"
+  },
+  {
+   "name": "pad_bc5f40",
+   "kind": "padding",
+   "rom_start": "0xbc5f40",
+   "rom_end": "0xbc5f60",
+   "evidence": "all bytes 0x00"
+  },
+  {
+   "name": "audio_sequences",
+   "kind": "audio",
+   "rom_start": "0xbc5f60",
+   "rom_end": "0xbe90d0",
+   "entries": 30,
+   "evidence": "FUN_800baa80(0xbc5f60, ...) / FUN_800bb43c(_DAT_803b706c, 0xbc5f60)"
+  },
+  {
+   "name": "pad_be90d0",
+   "kind": "padding",
+   "rom_start": "0xbe90d0",
+   "rom_end": "0xbe90e0",
+   "evidence": "all bytes 0x00"
+  },
+  {
+   "name": "audio_seq_bank_map",
+   "kind": "audio",
+   "rom_start": "0xbe90e0",
+   "rom_end": "0xbe9158",
+   "evidence": "FUN_800baa80(0xbe90e0, ..., 0x100)"
+  },
+  {
+   "name": "pad_be9158",
+   "kind": "padding",
+   "rom_start": "0xbe9158",
+   "rom_end": "0xbe9160",
+   "evidence": "all bytes 0x00"
+  },
+  {
+   "name": "pad_be9160",
+   "kind": "padding",
+   "rom_start": "0xbe9160",
+   "rom_end": "0xc00000",
+   "evidence": "all bytes 0xff"
+  }
+ ]
+}

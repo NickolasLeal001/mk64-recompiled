@@ -77,7 +77,20 @@ src/           main, carregamento da ROM, janela, config
 
 ---
 
-## Fase 1 — Mapa completo da ROM (1–2 semanas)
+## Fase 1 — Mapa completo da ROM (1–2 semanas) — 🔶 em andamento
+
+> **Feito (2026-10-28):**
+> - `tools/build_rom_map.py` gera `analysis/rom_map.json` a partir da ROM: 81 regiões, 100% da ROM, sem sobreposição. O mapa é em JSON, sem dependências externas.
+> - Código: 3 segmentos. `main`, `racing` e `seg3` (ROM `0x123640` → `0x80280000`).
+> - Leituras da ROM: 36 chamadas diretas ao DMA `0x800cdc30` + o wrapper `0x80001158` (REA `ev_eebc979b…`, `ev_9a3a7a20…`).
+> - Tabela de pistas `0x802B8D80`: 20 entradas × 0x30, cada uma com 3 faixas de ROM.
+> - Áudio: tabelas tipo 1/2/3 (bancos/samples/sequências) e o mapa sequência→banco, com tamanhos tirados das próprias tabelas.
+> - `tools/mio0.py` descomprime e valida: os 3.354 blocos MIO0 decodificam sem erro (zero falsos positivos).
+>
+> **Falta:**
+> - O fim dos 4 "bancos" (`0x145470`, `0x641f70`, `0x729a30`, `0x7fa3c0`, 57% da ROM) é inferido: cada um vai até o próximo início conhecido. Falta achar as tabelas que listam cada asset dentro deles.
+> - Separar o que é cada faixa das pistas. Os nomes `geo`/`packed`/`seg9` são provisórios.
+> - Tipo de save (item 4).
 
 Meta: cada byte da ROM classificado como código, dados, asset comprimido, áudio ou tabela.
 
