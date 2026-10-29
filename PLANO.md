@@ -366,7 +366,7 @@ Cada teste aponta para o ID de evidência REA que o justifica. Quando o port div
 
 ---
 
-## Fase 9 — Substituir tradução por C legível (opcional, contínuo) — 🔶 iniciada
+## Fase 9 — Substituir tradução por C legível (opcional, contínuo) — ⏸️ pausada em 2026-10-29 (5 funções reescritas)
 
 > - **Mecanismo:** `analysis/rewritten.json` lista as funções reescritas à mão em `native/`. O gerador não emite corpo para elas, e `tests/recomp_diff.c` compara cada uma com o interpretador MIPS só no estado visível pela ABI o32 (v0, s0–s7/fp, sp, ra, f0/f2, f20–f31 e toda a RAM).
 > - **Primeiras reescritas:** leitura do analógico (`native/controls.c`: zona morta quadrada de ±12 subtraída na direção do stick e limite de ±53), substituindo `FUN_80038534` e `FUN_800388b0`.
