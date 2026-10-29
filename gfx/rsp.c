@@ -248,6 +248,105 @@ static void moveword(uint32_t w0, uint32_t w1) {
     }
 }
 
+// ---------------------------------------------------------------------------------------------
+// Frame interpolation. Every display list run records the matrices it loads, keyed by what they
+// are used for: the next display list or vertex buffer at the same level, plus the G_MTX flags.
+// A display-only rerun of a frame's list blends each of its matrices with the matching one of the
+// frame before. When a key has as many matrices in both frames they pair in order; otherwise (an
+// object left or entered the view, particles came and went) a matrix pairs only with a clearly
+// nearest one. A jump (camera cut, respawn) keeps the current matrix.
+typedef struct MtxRec { uint32_t key; float pos[3]; Mat m; int used; } MtxRec;
+#define MTX_RECS 2048
+typedef struct MtxFrame { MtxRec rec[MTX_RECS]; int count; } MtxFrame;
+static MtxFrame g_frames[2], *g_prev = &g_frames[0], *g_cur = &g_frames[1];
+static uint32_t g_run_keys[MTX_RECS];  // keys met so far by the interpolated run
+static int g_run_count;
+static int g_interp;
+static float g_interp_t;
+#define MTX_JUMP 150.0f  // world units per frame; karts move about 10
+
+static uint32_t mtx_key(uint32_t pc, int flags) {
+    for (int k = 0; k < 32; k++, pc += 8) {
+        uint32_t w0 = RD32(pc), w1 = RD32(pc + 4);
+        uint8_t op = (uint8_t)(w0 >> 24);
+        if (op == 0x06 || op == 0x04) return seg_addr(w1) | (op == 0x04 ? 0x01000000u : 0) | (uint32_t)(flags & 7) << 28;
+        if (op == 0xB8) break;
+    }
+    return (uint32_t)(flags & 7) << 28;
+}
+
+// World position the matrix stands for: its translation, or the eye for a camera (look-at) matrix
+// multiplied onto the projection.
+static void mtx_pos(Mat m, int flags, float out[3]) {
+    if ((flags & 3) == 1)
+        for (int j = 0; j < 3; j++) out[j] = -(m[3][0] * m[j][0] + m[3][1] * m[j][1] + m[3][2] * m[j][2]);
+    else
+        for (int j = 0; j < 3; j++) out[j] = m[3][j];
+}
+
+static float dist3(const float a[3], const float b[3]) {
+    float dx = a[0] - b[0], dy = a[1] - b[1], dz = a[2] - b[2];
+    return sqrtf(dx * dx + dy * dy + dz * dz);
+}
+
+static int mtx_close(const MtxRec *r, const float pos[3], Mat m) {
+    if (dist3(r->pos, pos) > MTX_JUMP) return 0;
+    for (int i = 0; i < 3; i++)  // rotation (and scale) change under ~40 degrees
+        for (int j = 0; j < 3; j++)
+            if (fabsf(r->m[i][j] - m[i][j]) > 0.7f * (fabsf(m[i][0]) + fabsf(m[i][1]) + fabsf(m[i][2]) + 1e-3f)) return 0;
+    return 1;
+}
+
+static int key_count(const MtxFrame *f, uint32_t key) {
+    int n = 0;
+    for (int k = 0; k < f->count; k++) n += f->rec[k].key == key;
+    return n;
+}
+
+static MtxRec *mtx_match(uint32_t key, const float pos[3], Mat m) {
+    int nth = 0;
+    for (int k = 0; k < g_run_count; k++) nth += g_run_keys[k] == key;
+    if (g_run_count < MTX_RECS) g_run_keys[g_run_count++] = key;
+    if (key_count(g_prev, key) == key_count(g_cur, key)) {
+        for (int k = 0, seen = 0; k < g_prev->count; k++) {
+            MtxRec *r = &g_prev->rec[k];
+            if (r->key == key && seen++ == nth) return !r->used && mtx_close(r, pos, m) ? r : NULL;
+        }
+        return NULL;
+    }
+    MtxRec *best = NULL;
+    float d1 = MTX_JUMP, d2 = 1e30f;
+    for (int k = 0; k < g_prev->count; k++) {
+        MtxRec *r = &g_prev->rec[k];
+        if (r->key != key || r->used) continue;
+        float d = dist3(r->pos, pos);
+        if (d < d1) { d2 = d1; d1 = d; best = r; }
+        else if (d < d2) d2 = d;
+    }
+    return best && d1 * 2.0f < d2 && mtx_close(best, pos, m) ? best : NULL;
+}
+
+static void mtx_track(uint32_t pc, int flags, Mat m) {
+    uint32_t key = mtx_key(pc, flags);
+    float pos[3];
+    mtx_pos(m, flags, pos);
+    if (!g_interp) {
+        if (g_cur->count < MTX_RECS) {
+            MtxRec *r = &g_cur->rec[g_cur->count++];
+            r->key = key;
+            memcpy(r->pos, pos, sizeof pos);
+            memcpy(r->m, m, sizeof(Mat));
+        }
+        return;
+    }
+    MtxRec *r = mtx_match(key, pos, m);
+    if (!r) return;
+    r->used = 1;
+    float t = g_interp_t;
+    for (int i = 0; i < 4; i++)
+        for (int j = 0; j < 4; j++) m[i][j] = r->m[i][j] + (m[i][j] - r->m[i][j]) * t;
+}
+
 uint64_t rsp_stats_tris;
 FILE *rsp_trace;  // when set, every command of the display lists is written here
 
@@ -255,8 +354,7 @@ static int g_rect_tile = -1;
 int rsp_current_tile(void) { return g_rect_tile >= 0 ? g_rect_tile : S.tex_tile; }
 void rsp_set_rect_tile(int tile) { g_rect_tile = tile; }
 
-void rsp_run_display_list(uint8_t *rdram, uint32_t dl) {
-    g_ram = rdram;
+static void run_list(uint32_t dl) {
     uint32_t stack[18];
     int sp = 0;
     uint32_t pc = dl & 0x00FFFFFFu;
@@ -271,6 +369,7 @@ void rsp_run_display_list(uint8_t *rdram, uint32_t dl) {
             int p = (w0 >> 16) & 0xFF;
             Mat m;
             load_mtx(m, seg_addr(w1));
+            mtx_track(pc, p, m);
             if (p & 0x01) {  // projection
                 if (p & 0x02) memcpy(S.proj, m, sizeof m);
                 else mat_mul(S.proj, m, S.proj);
@@ -382,6 +481,45 @@ void rsp_run_display_list(uint8_t *rdram, uint32_t dl) {
         }
     }
     rdp_flush();  // display list ran past the guard without G_ENDDL
+}
+
+static uint8_t g_start[sizeof S];  // RSP state at the start of the last rsp_run_display_list
+static int g_start_rect_tile;
+
+void rsp_run_display_list(uint8_t *rdram, uint32_t dl) {
+    g_ram = rdram;
+    memcpy(g_start, &S, sizeof S);
+    g_start_rect_tile = g_rect_tile;
+    MtxFrame *f = g_prev;
+    g_prev = g_cur;
+    g_cur = f;
+    g_cur->count = 0;
+    rdp_mark_start();
+    run_list(dl);
+}
+
+void rsp_run_display_list_interp(uint8_t *rdram, uint32_t dl, float t) {
+    static uint8_t saved[sizeof S];
+    g_ram = rdram;
+    memcpy(saved, &S, sizeof S);
+    memcpy(&S, g_start, sizeof S);
+    int rect_tile = g_rect_tile;
+    g_rect_tile = g_start_rect_tile;
+    uint64_t tris = rsp_stats_tris;
+    FILE *trace = rsp_trace;
+    rsp_trace = NULL;
+    for (int k = 0; k < g_prev->count; k++) g_prev->rec[k].used = 0;
+    g_run_count = 0;
+    g_interp = 1;
+    g_interp_t = t;
+    rdp_interp_begin();
+    run_list(dl);
+    rdp_interp_end();
+    g_interp = 0;
+    memcpy(&S, saved, sizeof S);
+    g_rect_tile = rect_tile;
+    rsp_stats_tris = tris;
+    rsp_trace = trace;
 }
 
 void rsp_reset(void) {

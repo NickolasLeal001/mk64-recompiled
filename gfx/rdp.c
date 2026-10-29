@@ -67,6 +67,8 @@ typedef struct HiTarget {
     uint32_t addr;
     int w, ox, stride;  // 1x width; side margin and row length in enlarged pixels
     uint16_t *color, *shadow;
+    uint16_t *icolor;   // frame interpolation: the in-between image (rdp_interp_begin/end)
+    uint64_t istamp;    // interpolated run that drew icolor
     int pending;
     uint64_t used;
 } HiTarget;
@@ -77,6 +79,10 @@ static uint64_t g_hi_clock;
 static __declspec(thread) int g_hipass;              // drawing the enlarged pass
 static __declspec(thread) int g_s = 1, g_ox;         // its scale and side margin
 static __declspec(thread) HiTarget *g_tgt;           // its image (NULL: RDRAM)
+static __declspec(thread) int g_ipass;               // drawing the in-between image (icolor)
+static int g_interp;                                 // recording an interpolated run
+static uint64_t g_interp_id;
+static RdpState g_rec_saved;
 
 static int hi_ox(int w) { return g_wide && w == 320 ? (320 * g_scale + 3) / 6 : 0; }
 static int hi_stride(int w) { return w * g_scale + 2 * hi_ox(w); }
@@ -448,7 +454,7 @@ static float *zbuffer(void) {
 }
 
 // Color image pixel: RDRAM at 1x, the private image at the internal resolution.
-static uint16_t *hi_pixel(int x, int y) { return &g_tgt->color[(size_t)y * (size_t)g_tgt->stride + (size_t)x]; }
+static uint16_t *hi_pixel(int x, int y) { return &(g_ipass ? g_tgt->icolor : g_tgt->color)[(size_t)y * (size_t)g_tgt->stride + (size_t)x]; }
 
 static void write_pixel(int x, int y, Color comb, float shade_alpha, float z) {
     if (ALPHA_COMPARE() == 1 && comb.a < R.blend.a) return;
@@ -721,6 +727,9 @@ static HiTarget *hi_target(void) {
         if (t->pending) rdp_flush();
         free(t->color);
         free(t->shadow);
+        free(t->icolor);
+        t->icolor = NULL;
+        t->istamp = 0;
         t->addr = REC.cimg; t->w = w; t->ox = hi_ox(w); t->stride = hi_stride(w);
         // One spare row: like RDRAM, a primitive past the right edge spills into the next row.
         size_t pixels = (size_t)t->stride * (size_t)(240 * g_scale + 1);
@@ -735,14 +744,15 @@ static HiTarget *hi_target(void) {
     return t;
 }
 
-void rdp_set_scale(int scale, int widescreen) {
+void rdp_set_scale(int scale, int widescreen, int interp) {
     rdp_flush();
     g_scale = scale < 1 ? 1 : scale > 4 ? 4 : scale;
     g_wide = widescreen != 0;
-    g_hires = g_scale > 1 || g_wide;
+    g_hires = g_scale > 1 || g_wide || interp;
     for (int k = 0; k < HI_TARGETS; k++) {
         free(g_hi[k].color);
         free(g_hi[k].shadow);
+        free(g_hi[k].icolor);
         memset(&g_hi[k], 0, sizeof g_hi[k]);
     }
     free(g_zhi.z);
@@ -759,6 +769,14 @@ static Op *record(int kind, int tile) {
     int uses_z = kind == OP_FILL ? REC.cimg == REC.zimg : ((REC.om_lo >> 4) & 3) != 0;  // Z_CMP | Z_UPD
     if (uses_z) zbuffer_alloc();
     HiTarget *target = hi_target();
+    if (g_interp && target && target->istamp != g_interp_id) {
+        // The in-between image starts from the current display copy, like the real frame will.
+        size_t pixels = (size_t)target->stride * (size_t)(240 * g_scale + 1);
+        hi_sync(target, 1);
+        if (!target->icolor) target->icolor = malloc(sizeof(uint16_t) * pixels);
+        memcpy(target->icolor, target->color, sizeof(uint16_t) * pixels);
+        target->istamp = g_interp_id;
+    }
     if (g_op_count == g_op_cap) {
         g_op_cap = g_op_cap ? g_op_cap * 2 : 1024;
         g_ops = realloc(g_ops, g_op_cap * sizeof *g_ops);
@@ -780,12 +798,14 @@ typedef struct Band { int y0, y1, s, hi; } Band;
 static unsigned __stdcall band_worker(void *arg) {
     const Band *b = arg;
     g_s = b->s;
-    g_hipass = b->hi;
+    g_hipass = b->hi != 0;
+    g_ipass = b->hi == 2;
     for (size_t k = 0; k < g_op_count; k++) draw_op(&g_ops[k], b->y0, b->y1);
     g_cur = &REC;
     g_s = 1;
     g_ox = 0;
     g_hipass = 0;
+    g_ipass = 0;
     g_tgt = NULL;
     return 0;
 }
@@ -818,8 +838,9 @@ void rdp_flush(void) {
         // Private images first take what others wrote to RDRAM since the last flush.
         for (int k = 0; k < HI_TARGETS; k++)
             if (g_hi[k].pending) hi_sync(&g_hi[k], 1);
-        draw_pass(1, 0);
-        if (g_hires) {
+        if (g_interp) draw_pass(g_scale, 2);  // in-between images only; RDRAM is left alone
+        else draw_pass(1, 0);
+        if (g_hires && !g_interp) {
             draw_pass(g_scale, 1);
             for (int k = 0; k < HI_TARGETS; k++)
                 if (g_hi[k].pending) { hi_sync(&g_hi[k], 0); g_hi[k].pending = 0; }
@@ -832,6 +853,28 @@ void rdp_flush(void) {
     g_drawn_hi = 0;
     g_dirty = 1;
     g_cur = &REC;
+}
+
+// An interpolated run replays a display list for display only, from the state marked at its start:
+// its primitives go to the in-between images, and the current state is put back afterwards.
+static RdpState g_rec_start;
+
+void rdp_mark_start(void) { g_rec_start = REC; }
+
+void rdp_interp_begin(void) {
+    rdp_flush();
+    g_rec_saved = REC;
+    REC = g_rec_start;
+    g_dirty = 1;
+    g_interp = 1;
+    g_interp_id++;
+}
+
+void rdp_interp_end(void) {
+    rdp_flush();
+    g_interp = 0;
+    REC = g_rec_saved;
+    g_dirty = 1;
 }
 
 // A texture load from an image drawn by pending primitives must see them drawn first.
@@ -954,21 +997,33 @@ void rdp_read_framebuffer(uint32_t addr, int width, int height, uint32_t *out) {
         }
 }
 
+static void to_abgr(const uint16_t *src, int n, uint32_t *out) {
+    for (int k = 0; k < n; k++) {
+        uint16_t c = src[k];
+        uint32_t r = ((c >> 11) & 31) * 255 / 31, g = ((c >> 6) & 31) * 255 / 31, b = ((c >> 1) & 31) * 255 / 31;
+        out[k] = 0xFF000000u | (b << 16) | (g << 8) | r;
+    }
+}
+
 int rdp_read_framebuffer_hires(uint32_t addr, int width, int height, uint32_t *out, int *out_w, int *out_h) {
     if (!g_hires) return 0;
     rdp_flush();
     HiTarget *t = hi_find(addr & 0x00FFFFFFu, width);
     if (!t || height > 240) return 0;
     hi_sync(t, 1);
-    int W = t->stride, H = height * g_scale;
-    *out_w = W;
-    *out_h = H;
-    for (int k = 0; k < W * H; k++) {
-        uint16_t c = t->color[k];
-        uint32_t r = ((c >> 11) & 31) * 255 / 31, g = ((c >> 6) & 31) * 255 / 31, b = ((c >> 1) & 31) * 255 / 31;
-        out[k] = 0xFF000000u | (b << 16) | (g << 8) | r;
-    }
+    *out_w = t->stride;
+    *out_h = height * g_scale;
+    to_abgr(t->color, *out_w * *out_h, out);
     return 1;
+}
+
+uint64_t rdp_read_framebuffer_interp(uint32_t addr, int width, int height, uint32_t *out, int *out_w, int *out_h) {
+    HiTarget *t = g_hires ? hi_find(addr & 0x00FFFFFFu, width) : NULL;
+    if (!t || !t->icolor || !t->istamp || height > 240) return 0;
+    *out_w = t->stride;
+    *out_h = height * g_scale;
+    to_abgr(t->icolor, *out_w * *out_h, out);
+    return t->istamp;
 }
 
 int rdp_tile_size(int tile, int *w, int *h) {

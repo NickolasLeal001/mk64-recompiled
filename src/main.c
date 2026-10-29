@@ -28,6 +28,10 @@ typedef struct App {
     uint32_t *hpixels;
     int showing_hi, hi_w, hi_h;
     int log_w;  // logical width: 320, or 427 in widescreen
+    int interp;                 // 60 fps: an in-between image before each new 30 fps frame
+    uint32_t last_fb;           // framebuffer of the previous retrace
+    int held, prev_held;        // retraces the current / previous framebuffer stayed on screen
+    uint64_t interp_shown;      // last in-between image shown
     uint8_t *rdram;
     uint32_t pixels[FB_W * FB_H];
     int show_status;
@@ -121,6 +125,7 @@ static void on_task(void *user, uint32_t task) {
     }
     uint64_t t0 = SDL_GetPerformanceCounter();
     rsp_run_display_list(app->rdram, mem_r32(app->rdram, task + 48));
+    if (app->interp) rsp_run_display_list_interp(app->rdram, mem_r32(app->rdram, task + 48), 0.5f);
     static double total_ms;
     static int frames;
     total_ms += (double)(SDL_GetPerformanceCounter() - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
@@ -155,6 +160,8 @@ static void save_shot(App *app) {
 }
 
 // Each retrace shows the framebuffer the game handed to osViSwapBuffer (F1: status overlay).
+// With interpolation, a frame that replaces one held for two or more retraces (the game draws at
+// 30 fps or less) is first shown as its in-between image, and itself on the next retrace.
 static int on_retrace(void *user) {
     App *app = user;
     SDL_Event e;
@@ -177,10 +184,25 @@ static int on_retrace(void *user) {
     }
     uint64_t n = ultra_stats.retraces;
     if (ultra_stats.framebuffer) {
-        rdp_read_framebuffer(ultra_stats.framebuffer, FB_W, FB_H, app->pixels);
+        uint32_t fb = ultra_stats.framebuffer;
+        int swapped = fb != app->last_fb;
+        if (swapped) {
+            app->prev_held = app->held;
+            app->held = 0;
+            app->last_fb = fb;
+        }
+        app->held++;
+        rdp_read_framebuffer(fb, FB_W, FB_H, app->pixels);
         if (app->screen) SDL_UpdateTexture(app->screen, NULL, app->pixels, FB_W * 4);
         int hw = 0, hh = 0;
-        app->showing_hi = app->hpixels && rdp_read_framebuffer_hires(ultra_stats.framebuffer, FB_W, FB_H, app->hpixels, &hw, &hh);
+        uint64_t mid = app->interp && swapped && app->prev_held >= 2
+                           ? rdp_read_framebuffer_interp(fb, FB_W, FB_H, app->hpixels, &hw, &hh) : 0;
+        if (mid && mid != app->interp_shown) {
+            app->interp_shown = mid;
+            app->showing_hi = 1;
+        } else {
+            app->showing_hi = app->hpixels && rdp_read_framebuffer_hires(fb, FB_W, FB_H, app->hpixels, &hw, &hh);
+        }
         if (app->showing_hi && app->renderer) {
             if (!app->screen_hi || hw != app->hi_w || hh != app->hi_h) {
                 if (app->screen_hi) SDL_DestroyTexture(app->screen_hi);
@@ -342,8 +364,11 @@ int main(int argc, char **argv) {
     const char *res = SDL_getenv("MK64_RES_SCALE");
     int internal = res ? SDL_clamp(SDL_atoi(res), 1, 4) : headless ? 1 : config.internal;
     int wide = app.log_w != FB_W;
-    rdp_set_scale(internal, wide);
-    if (internal > 1 || wide) app.hpixels = malloc(sizeof(uint32_t) * 2 * FB_W * FB_H * internal * internal);
+    // Interpolation: mk64.ini, or MK64_INTERP (headless runs default to off).
+    const char *interp = SDL_getenv("MK64_INTERP");
+    app.interp = interp ? SDL_atoi(interp) != 0 : !headless && config.interp;
+    rdp_set_scale(internal, wide, app.interp);
+    if (internal > 1 || wide || app.interp) app.hpixels = malloc(sizeof(uint32_t) * 2 * FB_W * FB_H * internal * internal);
     rsp_reset();
     // The audio microcode's resampling filter, at ROM 0xF5A00 in this (SHA-1 checked) ROM.
     if (!abi_init(app.rom.data, app.rom.size, 0xF5A00)) fprintf(stderr, "aviso: tabela de reamostragem nao encontrada\n");

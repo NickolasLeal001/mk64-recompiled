@@ -31,6 +31,8 @@ static void write_default(const char *path) {
     fprintf(f, "resolucao_interna = 2\n\n");
     fprintf(f, "# Tela larga (16:9): mostra mais da pista nas laterais; o HUD fica no centro\n");
     fprintf(f, "tela_larga = 0\n\n");
+    fprintf(f, "# 60 quadros por segundo: imagens intermediarias entre os quadros do jogo (30 por segundo)\n");
+    fprintf(f, "interpolacao = 1\n\n");
     fprintf(f, "# Volume de 0 a 100\nvolume = 100\n\n");
     fprintf(f, "# Teclado: nomes de tecla do SDL (ex.: X, Return, Left Shift, Space, Up)\n");
     for (int k = 0; k < CFG_KEY_COUNT; k++) fprintf(f, "tecla_%s = %s\n", KEYS[k].key, KEYS[k].def);
@@ -51,6 +53,7 @@ void config_load(void) {
     config.volume = 100;
     config.internal = 2;
     config.widescreen = 0;
+    config.interp = 1;
     for (int k = 0; k < CFG_KEY_COUNT; k++) config.keys[k] = SDL_GetScancodeFromName(KEYS[k].def);
 
     char path[1024];
@@ -73,6 +76,7 @@ void config_load(void) {
         else if (!strcmp(key, "filtro")) config.smooth = !strcmp(val, "suave");
         else if (!strcmp(key, "resolucao_interna")) config.internal = SDL_clamp(SDL_atoi(val), 1, 4);
         else if (!strcmp(key, "tela_larga")) config.widescreen = SDL_atoi(val) != 0;
+        else if (!strcmp(key, "interpolacao")) config.interp = SDL_atoi(val) != 0;
         else if (!strcmp(key, "volume")) config.volume = SDL_clamp(SDL_atoi(val), 0, 100);
         else if (!strncmp(key, "tecla_", 6)) {
             for (int k = 0; k < CFG_KEY_COUNT; k++) {

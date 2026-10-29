@@ -17,6 +17,7 @@ typedef struct Config {
     int volume;      // 0..100
     int internal;    // internal resolution, multiple of 320x240 (1-4)
     int widescreen;  // 16:9 picture (wider view of the 3D scene)
+    int interp;      // 60 fps display through in-between images
     int keys[CFG_KEY_COUNT];  // SDL_Scancode
 } Config;
 
