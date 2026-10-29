@@ -289,7 +289,18 @@ Substitui o sistema operacional e o hardware do N64:
 
 ---
 
-## Fase 6 — Áudio (3–5 semanas)
+## Fase 6 — Áudio (3–5 semanas) — ✅ concluída em 2026-10-28
+
+> - **ABI real:** o jogo **não** usa a ABI 1 da libultra. As listas têm opcodes até `0x16`; a codificação bate com a ABI de áudio mais nova (`ENVSETUP1/2`, `ENVMIXER` em `0x13`, `LOADBUFF/SAVEBUFF` em `0x14/0x15` com tamanho `>> 4`) e endereços de DMEM absolutos. Identificado capturando uma lista real (`MK64_DUMP_AL`).
+> - `audio/abi.c`: ADPCM (VADPCM 4 bits), RESAMPLE, ENVMIXER (barramentos seco/reverb), MIXER, INTERLEAVE, INTERL, DMEMMOVE, LOADADPCM, SETLOOP, LOAD/SAVEBUFF. Opcodes desconhecidos são logados; nenhum apareceu.
+>   - A tabela do filtro de reamostragem é lida da ROM do usuário (`0xF5A00`, conferida pela soma das linhas ≈ 32768), nunca embutida no código.
+> - **Saída:** `osAiSetNextBuffer` → SDL3 a 26.807 Hz; `MK64_WAV=arquivo` grava tudo.
+> - **Validação objetiva** (sem ouvir):
+>   - planura espectral 0,04–0,16 contra 0,55 do ruído branco;
+>   - na música do título, picos em 209/393/589/772/956 Hz, série harmônica de ~196 Hz;
+>   - clipping ≤ 0,05%;
+>   - fila do dispositivo estável em ~13–16 ms (sem atraso crescente).
+> - **Não feito:** escuta humana e comparação com emulador. Ficam para a validação da fase 8.
 
 - Interpretar as listas de comandos do microcódigo de áudio (ABI): `ADPCM`, `RESAMPLE`, `ENVMIXER`, `LOADBUFF`, `SAVEBUFF`, `INTERLEAVE`…
 - Gerar PCM e entregar ao SDL3 na taxa que o jogo pede ("SynoutRate" aparece nas strings).

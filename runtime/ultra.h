@@ -23,6 +23,9 @@ typedef struct UltraHost {
     int (*on_retrace)(void *user);
     // Called when the game starts an RSP task; `task` is the OSTask address in RDRAM.
     void (*on_task)(void *user, uint32_t task);
+    // Audio interface: a buffer of big-endian stereo s16 in RDRAM, and bytes still queued.
+    void (*on_ai_buffer)(void *user, uint32_t addr, uint32_t size, uint32_t frequency);
+    uint32_t (*ai_queued)(void *user);
     void *user;
 } UltraHost;
 

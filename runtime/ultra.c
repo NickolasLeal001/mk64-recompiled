@@ -556,8 +556,16 @@ void func_800D0F80(uint8_t *rdram, Ctx *ctx) {  // osAiSetFrequency(freq)
     ultra_log("osAiSetFrequency %u -> %u Hz", freq, ultra_stats.ai_frequency);
     RET(ctx, ultra_stats.ai_frequency);
 }
-void func_800D10E0(uint8_t *rdram, Ctx *ctx) { (void)rdram; RET(ctx, 0); }  // osAiGetLength
-void func_800D10F0(uint8_t *rdram, Ctx *ctx) { (void)rdram; RET(ctx, 0); }  // osAiSetNextBuffer
+void func_800D10E0(uint8_t *rdram, Ctx *ctx) {  // osAiGetLength: bytes not yet played
+    (void)rdram;
+    RET(ctx, g_host.ai_queued ? g_host.ai_queued(g_host.user) : 0);
+}
+
+void func_800D10F0(uint8_t *rdram, Ctx *ctx) {  // osAiSetNextBuffer(ptr, size)
+    (void)rdram;
+    if (g_host.on_ai_buffer) g_host.on_ai_buffer(g_host.user, ARG(ctx, 0), ARG(ctx, 1), ultra_stats.ai_frequency);
+    RET(ctx, 0);
+}
 
 // ---------------------------------------------------------------------------------------------
 void ultra_run(uint8_t *rdram, const uint8_t *rom, size_t rom_size, const UltraHost *host) {
