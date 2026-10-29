@@ -400,8 +400,11 @@ Fase 0: criar o esqueleto CMake e o verificador de SHA-1. Fase 1, item 1: listar
 > - **EEPROM:** no primeiro boot o jogo grava os recordes padrão (512 bytes com checksum) em `mk64.eep`.
 > - **Correção:** neblina calculada depois do recorte no near plane (vértices atrás da câmera davam z/w sem sentido).
 > - **Piloto automático para testes:** `MK64_AUTOPILOT=n` dá ao jogador 1 as flags de kart da IA (`0x9010` em vez de `0xc010`, achadas num dump da RAM com `MK64_DUMPRAM`). A IA do próprio jogo pilota o Mario: ele completou as 3 voltas do Luigi Raceway (7º lugar). Ao terminar, o jogador volta a ser humano (bit `0x0800` = corrida terminada).
+> - **Fim de corrida resolvido:** o jogo só avança a tela de resultado quando um jogador **humano** cruza a linha. O piloto automático agora devolve o controle quando o progresso do jogador 1 chega a 2,97 voltas, com A segurado.
+>   - Endereços achados comparando dumps: contador de voltas `0x80164390` (s32 × 8, o mesmo que o código de debug da pausa altera) e progresso acumulado `0x801644d0` (float × 8, voltas + fração).
+>   - Replay `gp_corrida_completa`: 3 voltas, ranking, RETRY e nova largada; 82 quadros idênticos em duas execuções.
 > - **Aberto:**
->   - Tela de resultado: depois da corrida, A e START não avançam. START abre o menu de pausa ("CONTINUE GAME/QUIT"). Todos os karts têm `0x0800`. Falta achar a condição que o jogo espera; até lá, pódio e copa completa ficam sem teste.
+>   - Pódio: exige terminar entre os 4 primeiros, e a IA pilotando o Mario terminou em 7º em todas as tentativas.
 >   - Choco Mountain aparece com muita neblina branca. A fórmula segue a referência; falta comparar com o original (fase 8).
 >   - Pódio e gravação de um recorde novo: exigem completar corridas, ou seja, pilotar 3 voltas por roteiro ou com piloto automático.
 >   - VS/Battle com 3–4 jogadores: roteiros dos controles 3 e 4.

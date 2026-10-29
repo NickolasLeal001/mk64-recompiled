@@ -163,11 +163,23 @@ static int on_retrace(void *user) {
     // tests that need to finish races.
     // Once the race is over (0x0800 on every kart) player 1 goes back to human, or the result
     // screens would wait forever for a human player.
+    // Near the end of the last lap (race progress 0x801644d0[0] >= 2.97 laps) control goes back to
+    // the human player, so the game sees a human cross the line and its result screens advance.
     const char *autopilot = SDL_getenv("MK64_AUTOPILOT");
     if (autopilot && n >= (uint64_t)SDL_atoi(autopilot)) {
         static int driving;
         uint16_t flags = mem_r16(app->rdram, 0x800F6990u);
-        if ((flags & 0x8000) && (flags & 0x4000) && !(flags & 0x0800)) {
+        uint32_t pbits = mem_r32(app->rdram, 0x801644D0u);
+        float progress;
+        SDL_memcpy(&progress, &pbits, 4);
+        int near_end = progress >= 2.97f && progress < 4.0f;
+        if (driving && near_end) {
+            mem_w16(app->rdram, 0x800F6990u, (uint16_t)((flags & ~0x1000) | 0x4000));
+            driving = 0;
+            ultra_pads[0].buttons |= 0x8000;
+        } else if (near_end) {
+            ultra_pads[0].buttons |= 0x8000;  // accelerate across the line
+        } else if ((flags & 0x8000) && (flags & 0x4000) && !(flags & 0x0800)) {
             mem_w16(app->rdram, 0x800F6990u, (uint16_t)((flags & ~0x4000) | 0x1000));
             driving = 1;
         } else if (driving && (flags & 0x0800)) {

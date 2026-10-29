@@ -31,6 +31,7 @@ def run(rom, spec, name):
             env[f"MK64_INPUT{k}"] = spec[f"input{k}"]
     if spec.get("autopilot"):
         env["MK64_AUTOPILOT"] = str(spec["autopilot"])
+    env.update({k: str(v) for k, v in spec.get("env", {}).items()})
     subprocess.run([EXE, rom], cwd=work, env=env, stdout=subprocess.DEVNULL, check=False, timeout=1800)
     hashes = {}
     path = os.path.join(work, "replay_hashes.txt")
