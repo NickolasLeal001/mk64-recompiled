@@ -35,7 +35,7 @@ if(RECOMP_GENERATED)
     target_compile_options(recomp_game PRIVATE /bigobj /W3 /wd4102 /wd4127 /wd4146)
   endif()
   # The game: recompiled code + native libultra runtime + SDL host.
-  add_executable(mk64 src/main.c src/input.c runtime/ultra.c runtime/io.c gfx/rsp.c gfx/rdp.c audio/abi.c)
+  add_executable(mk64 src/main.c src/input.c src/config.c runtime/ultra.c runtime/io.c gfx/rsp.c gfx/rdp.c audio/abi.c)
   target_include_directories(mk64 PRIVATE runtime generated src gfx audio)
   target_link_libraries(mk64 PRIVATE recomp_game rom SDL3::SDL3-static)
   if(MSVC)

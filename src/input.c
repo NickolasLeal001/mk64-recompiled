@@ -3,6 +3,7 @@
 
 #include <SDL3/SDL.h>
 
+#include "config.h"
 #include "ultra.h"
 
 // N64 button bits (os.h)
@@ -79,25 +80,15 @@ void input_update(void) {
     const bool *k = SDL_GetKeyboardState(NULL);
     uint16_t b = 0;
     int x = 0, y = 0;
-    // Keyboard: arrows = stick, X = A, C = B, Z = Z, Enter = Start, A/S = L/R, IJKL = C, WASD-free.
-    if (k[SDL_SCANCODE_X]) b |= N64_A;
-    if (k[SDL_SCANCODE_C]) b |= N64_B;
-    if (k[SDL_SCANCODE_Z]) b |= N64_Z;
-    if (k[SDL_SCANCODE_RETURN]) b |= N64_START;
-    if (k[SDL_SCANCODE_A]) b |= N64_L;
-    if (k[SDL_SCANCODE_S]) b |= N64_R;
-    if (k[SDL_SCANCODE_I]) b |= N64_CU;
-    if (k[SDL_SCANCODE_K]) b |= N64_CD;
-    if (k[SDL_SCANCODE_J]) b |= N64_CL;
-    if (k[SDL_SCANCODE_L]) b |= N64_CR;
-    if (k[SDL_SCANCODE_T]) b |= N64_DU;
-    if (k[SDL_SCANCODE_G]) b |= N64_DD;
-    if (k[SDL_SCANCODE_F]) b |= N64_DL;
-    if (k[SDL_SCANCODE_H]) b |= N64_DR;
-    if (k[SDL_SCANCODE_LEFT]) x -= STICK_MAX;
-    if (k[SDL_SCANCODE_RIGHT]) x += STICK_MAX;
-    if (k[SDL_SCANCODE_UP]) y += STICK_MAX;
-    if (k[SDL_SCANCODE_DOWN]) y -= STICK_MAX;
+    // Keyboard, as mapped in mk64.ini (src/config.c).
+    static const uint16_t bits[] = {N64_A, N64_B, N64_Z, N64_START, N64_L, N64_R, N64_CU, N64_CD, N64_CL,
+                                    N64_CR, N64_DU, N64_DD, N64_DL, N64_DR};
+    for (int key = CFG_A; key <= CFG_DR; key++)
+        if (k[config.keys[key]]) b |= bits[key];
+    if (k[config.keys[CFG_STICK_LEFT]]) x -= STICK_MAX;
+    if (k[config.keys[CFG_STICK_RIGHT]]) x += STICK_MAX;
+    if (k[config.keys[CFG_STICK_UP]]) y += STICK_MAX;
+    if (k[config.keys[CFG_STICK_DOWN]]) y -= STICK_MAX;
 
     if (g_pad) {
         if (SDL_GetGamepadButton(g_pad, SDL_GAMEPAD_BUTTON_SOUTH)) b |= N64_A;

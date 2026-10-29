@@ -5,6 +5,7 @@
 #include <stdlib.h>
 
 #include "abi.h"
+#include "config.h"
 #include "input.h"
 #include "rdp.h"
 #include "rom.h"
@@ -65,7 +66,10 @@ static void on_ai_buffer(void *user, uint32_t addr, uint32_t size, uint32_t freq
         SDL_AudioSpec spec = {SDL_AUDIO_S16, 2, (int)freq};
         if (!app->audio) {
             app->audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
-            if (app->audio) SDL_ResumeAudioStreamDevice(app->audio);
+            if (app->audio) {
+                SDL_SetAudioStreamGain(app->audio, config.volume / 100.0f);
+                SDL_ResumeAudioStreamDevice(app->audio);
+            }
         } else {
             SDL_SetAudioStreamFormat(app->audio, &spec, NULL);
         }
@@ -144,6 +148,10 @@ static int on_retrace(void *user) {
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_EVENT_QUIT || (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE)) return 0;
         if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F1) app->show_status = !app->show_status;
+        if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F11 && app->window) {
+            config.fullscreen = !config.fullscreen;
+            SDL_SetWindowFullscreen(app->window, config.fullscreen);
+        }
     }
     input_update();
     if (app->audio && ultra_stats.retraces % 600 == 0)
@@ -272,16 +280,20 @@ int main(int argc, char **argv) {
     ultra_deterministic = headless;
     const char *exit_at = SDL_getenv("MK64_EXIT_AT");
     app.exit_at = exit_at ? (uint64_t)SDL_atoi(exit_at) : 0;
+    config_load();
     if (!headless) {
         char title[128];
         SDL_snprintf(title, sizeof(title), "MK64 Port - %s (%s)", app.rom.title, app.rom.game_code);
-        if (!SDL_CreateWindowAndRenderer(title, 640, 480, SDL_WINDOW_RESIZABLE, &app.window, &app.renderer)) {
+        SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | (config.fullscreen ? SDL_WINDOW_FULLSCREEN : 0);
+        if (!SDL_CreateWindowAndRenderer(title, FB_W * config.scale, FB_H * config.scale, flags, &app.window,
+                                         &app.renderer)) {
             fail(SDL_GetError());
             return 1;
         }
+        SDL_SetRenderVSync(app.renderer, 0);
         SDL_SetRenderLogicalPresentation(app.renderer, FB_W, FB_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
         app.screen = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, FB_W, FB_H);
-        SDL_SetTextureScaleMode(app.screen, SDL_SCALEMODE_NEAREST);
+        SDL_SetTextureScaleMode(app.screen, config.smooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
     }
     const char *shots = SDL_getenv("MK64_SHOTS");
     app.shots = shots ? SDL_atoi(shots) : 0;

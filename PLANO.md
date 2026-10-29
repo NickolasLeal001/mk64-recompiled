@@ -359,7 +359,12 @@ Para cada sistema já entendido (controle → esterço → aceleração → drif
 
 ---
 
-## Fase 10 — Melhorias nativas (depois que tudo bate)
+## Fase 10 — Melhorias nativas (depois que tudo bate) — 🔶 em andamento
+
+> - **Feito:**
+>   - `mk64.ini` ao lado do executável (criado com o padrão): escala da janela, tela cheia (F11 alterna), filtro nítido/suave, volume e mapa completo do teclado (nomes de tecla do SDL).
+>   - Renderizador 2,3× mais rápido sem mudar nenhum pixel (pior caso 13,9 ms por quadro).
+> - **Falta:** resolução interna maior e widescreen, que exigem desenhar num buffer próprio em vez do framebuffer de 320×240 na RAM. Com ~14 ms por quadro em 1×, uma imagem 2× (4× mais pixels) não cabe em uma thread só. O caminho é rasterizar em faixas paralelas (gravando o estado por primitiva) ou levar o RDP para a GPU. Também falta 60 fps com interpolação.
 
 - Resolução livre e widescreen: corrigir o FOV, que hoje é ~58°/~68°/~45° conforme o número de telas.
 - 60 fps com interpolação de matrizes.
