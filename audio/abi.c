@@ -1,7 +1,8 @@
 // High-level emulation of the game's audio microcode. Its command lists use the later libultra
 // audio ABI (the one with ENVSETUP1/ENVSETUP2/ENVMIXER at 0x12/0x16/0x13 and LOADBUFF/SAVEBUFF at
-// 0x14/0x15, sizes packed as count >> 4), identified from the lists the game builds; DMEM
-// addresses are absolute. DMEM is kept as big-endian bytes like the RSP's data memory.
+// 0x14/0x15), identified from the lists the game builds; DMEM addresses are absolute. MK64's
+// variant of it (as in Mupen64Plus' HLE "nead_mk") takes INTERLEAVE's output and size from
+// SETBUFF and has no wet ramp. DMEM is kept as big-endian bytes like the RSP's data memory.
 #include "abi.h"
 
 #include <string.h>
@@ -17,7 +18,7 @@ static struct {
     uint32_t segments[16];
     uint16_t in, out, count;
     uint16_t vol[2], rate[2];
-    uint16_t vol_wet, rate_wet;
+    uint16_t vol_wet;
     int16_t table[16 * 8];
     uint32_t loop;
 } A;
@@ -45,7 +46,7 @@ int abi_init(const uint8_t *rom, size_t rom_size, uint32_t lut_offset) {
     return g_lut_ok;
 }
 
-// --- ADPCM (VADPCM, 4 bits per sample) --------------------------------------------------------
+// --- ADPCM (VADPCM, 4 or, with flag 0x04, 2 bits per sample) -------------------------------------
 static void adpcm(uint8_t flags, uint32_t state) {
     int16_t last[16];
     if (flags & 0x01) {
@@ -59,13 +60,23 @@ static void adpcm(uint8_t flags, uint32_t state) {
     int count = (A.count + 31) & ~31;
     while (count > 0) {
         uint8_t code = g_dmem[in++ & 0xFFFF];
-        int scale = code >> 4, shift = scale < 12 ? 12 - scale : 0;
+        int scale = code >> 4;
         const int16_t *book1 = A.table + ((code & 15) << 4), *book2 = book1 + 8;
         int16_t frame[16];
-        for (int k = 0; k < 8; k++) {
-            uint8_t b = g_dmem[in++ & 0xFFFF];
-            frame[2 * k] = (int16_t)((int16_t)((uint16_t)(b >> 4) << 12) >> shift);
-            frame[2 * k + 1] = (int16_t)((int16_t)((uint16_t)(b & 15) << 12) >> shift);
+        if (flags & 0x04) {
+            int shift = scale < 14 ? 14 - scale : 0;
+            for (int k = 0; k < 4; k++) {
+                uint8_t b = g_dmem[in++ & 0xFFFF];
+                for (int q = 0; q < 4; q++)
+                    frame[4 * k + q] = (int16_t)((int16_t)((uint16_t)((b >> (6 - 2 * q)) & 3) << 14) >> shift);
+            }
+        } else {
+            int shift = scale < 12 ? 12 - scale : 0;
+            for (int k = 0; k < 8; k++) {
+                uint8_t b = g_dmem[in++ & 0xFFFF];
+                frame[2 * k] = (int16_t)((int16_t)((uint16_t)(b >> 4) << 12) >> shift);
+                frame[2 * k + 1] = (int16_t)((int16_t)((uint16_t)(b & 15) << 12) >> shift);
+            }
         }
         for (int half = 0; half < 2; half++) {
             const int16_t *src = frame + 8 * half;
@@ -121,8 +132,7 @@ static void resample(uint8_t flags, uint16_t pitch16, uint32_t state) {
 static void envmixer(uint32_t w0, uint32_t w1) {
     uint32_t in = ((w0 >> 16) & 0xFF) << 4;
     int n = (int)((w0 >> 8) & 0xFF);
-    int swap = (w0 >> 4) & 1;
-    int16_t negs[2] = {(int16_t)((w0 >> 3) & 1 ? -1 : 0), (int16_t)((w0 >> 2) & 1 ? -1 : 0)};
+    int16_t negs[2] = {(int16_t)((w0 >> 1) & 1 ? -1 : 0), (int16_t)(w0 & 1 ? -1 : 0)};
     uint32_t dry[2] = {((w1 >> 24) & 0xFF) << 4, ((w1 >> 16) & 0xFF) << 4};
     uint32_t wet[2] = {((w1 >> 8) & 0xFF) << 4, (w1 & 0xFF) << 4};
     uint16_t vols[2] = {A.vol[0], A.vol[1]};
@@ -136,14 +146,13 @@ static void envmixer(uint32_t w0, uint32_t w1) {
             for (int j = 0; j < 2; j++) sides[j] = (int16_t)(((s * vols[j]) >> 16) ^ negs[j]);
             for (int j = 0; j < 2; j++) {
                 dw16(dry[j], clamp16(dm16(dry[j]) + sides[j]));
-                dw16(wet[j], clamp16(dm16(wet[j]) + ((sides[swap ? 1 - j : j] * vol_wet) >> 16)));
+                dw16(wet[j], clamp16(dm16(wet[j]) + ((sides[j] * vol_wet) >> 16)));
                 dry[j] += 2;
                 wet[j] += 2;
             }
         }
         vols[0] = (uint16_t)(vols[0] + A.rate[0]);
         vols[1] = (uint16_t)(vols[1] + A.rate[1]);
-        vol_wet = (uint16_t)(vol_wet + A.rate_wet);
         n -= 8;
     }
 }
@@ -159,7 +168,7 @@ void abi_run(uint8_t *rdram, uint32_t list, uint32_t size) {
         case 0x00: break;  // SPNOOP
         case 0x01: adpcm(flags, addr(w1)); break;
         case 0x02:         // CLEARBUFF(dmem, count)
-            memset(&g_dmem[w0 & 0xFFFF], 0, (uint16_t)w1 > 0x10000 - (w0 & 0xFFFF) ? 0 : (uint16_t)w1);
+            memset(&g_dmem[w0 & 0xFFFF], 0, (w1 & 0xFFF) > 0x10000 - (w0 & 0xFFFF) ? 0 : (w1 & 0xFFF));
             break;
         case 0x05: resample(flags, (uint16_t)w0, addr(w1)); break;
         case 0x07: if (w1) A.segments[(w1 >> 24) & 15] = w1 & 0x00FFFFFFu; break;  // SEGMENT
@@ -169,7 +178,7 @@ void abi_run(uint8_t *rdram, uint32_t list, uint32_t size) {
             A.count = (uint16_t)w1;
             break;
         case 0x0A: {       // DMEMMOVE(in, out, count)
-            uint16_t i = (uint16_t)w0, o = (uint16_t)(w1 >> 16), c = (uint16_t)w1;
+            uint16_t i = (uint16_t)w0, o = (uint16_t)(w1 >> 16), c = (uint16_t)((w1 + 3) & ~3u);
             memmove(&g_dmem[o], &g_dmem[i], (size_t)c > (size_t)(0x10000 - (o > i ? o : i)) ? 0 : c);
             break;
         }
@@ -200,25 +209,23 @@ void abi_run(uint8_t *rdram, uint32_t list, uint32_t size) {
         case 0x0F: A.loop = addr(w1); break;  // SETLOOP
         case 0x11: {       // INTERL(count, in, out): every other sample (2:1 decimation)
             uint16_t c = (uint16_t)w0, i = (uint16_t)(w1 >> 16), o = (uint16_t)w1;
-            int n = (c + 7) & ~7;
-            for (int j = 0; j < n; j++) dw16(o + 2 * j, dm16(i + 4 * j));
+            for (int j = 0; j < c; j++) dw16(o + 2 * j, dm16(i + 4 * j));
             break;
         }
-        case 0x12:         // ENVSETUP1(initial wet volume, wet ramp, left ramp, right ramp)
+        case 0x12:         // ENVSETUP1(wet volume, unused, left ramp, right ramp): the wet volume stays
             A.vol_wet = (uint16_t)(flags << 8);
-            A.rate_wet = (uint16_t)w0;
             A.rate[0] = (uint16_t)(w1 >> 16);
             A.rate[1] = (uint16_t)w1;
             break;
         case 0x13: envmixer(w0, w1); break;
-        case 0x14: {       // LOADBUFF(count >> 4, dmem, addr)
-            uint32_t a = addr(w1), d = w0 & 0xFFFF;
-            for (uint32_t n = 0; n < packed; n++) g_dmem[(d + n) & 0xFFFF] = mem_r8(rdram, 0x80000000u | (a + n));
+        case 0x14: {       // LOADBUFF(count, dmem, addr): a DMA, so dmem/addr aligned to 4/8 and count to 8
+            uint32_t a = addr(w1) & ~7u, d = w0 & 0xFFC, c = (((w0 >> 12) & 0xFFF) + 7) & ~7u;
+            for (uint32_t n = 0; n < c; n++) g_dmem[(d + n) & 0xFFFF] = mem_r8(rdram, 0x80000000u | (a + n));
             break;
         }
-        case 0x15: {       // SAVEBUFF(count >> 4, dmem, addr)
-            uint32_t a = addr(w1), d = w0 & 0xFFFF;
-            for (uint32_t n = 0; n < packed; n++) mem_w8(rdram, 0x80000000u | (a + n), g_dmem[(d + n) & 0xFFFF]);
+        case 0x15: {       // SAVEBUFF(count, dmem, addr), aligned like LOADBUFF
+            uint32_t a = addr(w1) & ~7u, d = w0 & 0xFFC, c = (((w0 >> 12) & 0xFFF) + 7) & ~7u;
+            for (uint32_t n = 0; n < c; n++) mem_w8(rdram, 0x80000000u | (a + n), g_dmem[(d + n) & 0xFFFF]);
             break;
         }
         case 0x16:         // ENVSETUP2(initial left volume, initial right volume)

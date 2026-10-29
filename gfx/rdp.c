@@ -769,6 +769,7 @@ static Op *record(int kind, int tile) {
     int uses_z = kind == OP_FILL ? REC.cimg == REC.zimg : ((REC.om_lo >> 4) & 3) != 0;  // Z_CMP | Z_UPD
     if (uses_z) zbuffer_alloc();
     HiTarget *target = hi_target();
+    if (!g_interp && target) target->istamp = 0;  // redrawn: its in-between image is stale
     if (g_interp && target && target->istamp != g_interp_id) {
         // The in-between image starts from the current display copy, like the real frame will.
         size_t pixels = (size_t)target->stride * (size_t)(240 * g_scale + 1);

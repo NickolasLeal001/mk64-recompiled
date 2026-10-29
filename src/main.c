@@ -42,6 +42,11 @@ typedef struct App {
     uint32_t audio_freq, audio_freq_out;  // rate of the game, rate the stream was set up for
     FILE *wav;  // MK64_WAV: copy of everything sent to the speakers
     uint32_t wav_bytes;
+    uint32_t underruns;  // buffers that found the speaker queue already empty
+    uint64_t audio_bytes;  // sent to the speakers
+    int audio_started;   // playback begins once AUDIO_CUSHION_MS are queued
+    double ai_end[2];    // when each buffer in the emulated AI DMA queue finishes (seconds)
+    int ai_count;
     Rom rom;
 } App;
 
@@ -67,6 +72,22 @@ static void finish_wav(void) {
     }
 }
 
+// Audio output. The game sizes each buffer from osAiGetLength, which on the console tells what is
+// left of the buffer being played, so it is answered from an emulated AI DMA queue clocked by
+// real time; the game then produces audio at exactly the playback rate. The speakers get the
+// buffers through an SDL stream that keeps a cushion of AUDIO_CUSHION_MS against scheduling
+// jitter, held by nudging the playback speed (at most 0.5%) instead of dropping or padding.
+#define AUDIO_CUSHION_MS 60.0
+
+static double now_s(void) { return (double)SDL_GetTicksNS() / 1e9; }
+
+static void ai_advance(App *app, double now) {
+    while (app->ai_count && app->ai_end[0] <= now) {
+        app->ai_end[0] = app->ai_end[1];
+        app->ai_count--;
+    }
+}
+
 static void on_ai_buffer(void *user, uint32_t addr, uint32_t size, uint32_t freq) {
     App *app = user;
     if (!freq || size == 0 || size > 0x10000) return;
@@ -77,7 +98,6 @@ static void on_ai_buffer(void *user, uint32_t addr, uint32_t size, uint32_t freq
             app->audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
             if (app->audio) {
                 SDL_SetAudioStreamGain(app->audio, config.volume / 100.0f);
-                SDL_ResumeAudioStreamDevice(app->audio);
             }
         } else {
             SDL_SetAudioStreamFormat(app->audio, &spec, NULL);
@@ -87,19 +107,87 @@ static void on_ai_buffer(void *user, uint32_t addr, uint32_t size, uint32_t freq
     static int16_t pcm[0x8000];
     uint32_t n = size / 2;
     for (uint32_t k = 0; k < n; k++) pcm[k] = (int16_t)mem_r16(app->rdram, addr + 2 * k);
-    if (app->audio) SDL_PutAudioStreamData(app->audio, pcm, (int)size);
+    if (app->audio) {
+        double now = now_s();
+        ai_advance(app, now);
+        double start = app->ai_count ? app->ai_end[app->ai_count - 1] : now;
+        if (app->ai_count == 2) app->ai_end[0] = app->ai_end[1], app->ai_count = 1;  // console queue holds two
+        app->ai_end[app->ai_count++] = (start > now ? start : now) + size / 4.0 / freq;
+        int queued = SDL_GetAudioStreamQueued(app->audio);
+        if (app->audio_started && queued == 0) app->underruns++;
+        SDL_PutAudioStreamData(app->audio, pcm, (int)size);
+        app->audio_bytes += size;
+        double ms = (queued + (int)size) / 4.0 * 1000.0 / freq;
+        if (!app->audio_started && ms >= AUDIO_CUSHION_MS) {
+            SDL_ResumeAudioStreamDevice(app->audio);
+            app->audio_started = 1;
+        }
+        double nudge = (ms - AUDIO_CUSHION_MS) / AUDIO_CUSHION_MS * 0.005;
+        SDL_SetAudioStreamFrequencyRatio(app->audio, 1.0f + (float)SDL_clamp(nudge, -0.005, 0.005));
+    }
     if (app->wav) {
         fwrite(pcm, 1, size, app->wav);
         app->wav_bytes += size;
     }
 }
 
-// The game produces a fixed amount of audio per frame; measured queue depth stays near one
-// buffer (13-16 ms) during races, so the queued byte count is reported as is.
+// osAiGetLength: bytes left in the buffer the emulated AI is playing (0 without sound output).
+// While the speaker cushion is short (a slow frame held the game back), it reports less, so the
+// game makes larger buffers until the cushion is back.
 static uint32_t ai_queued(void *user) {
     App *app = user;
-    int q = app->audio ? SDL_GetAudioStreamQueued(app->audio) : 0;
-    return q > 0 ? (uint32_t)q : 0;
+    if (!app->audio || !app->audio_freq) return 0;
+    double now = now_s();
+    ai_advance(app, now);
+    if (!app->ai_count) return 0;
+    double left = (app->ai_end[0] - now) * app->audio_freq * 4.0;
+    double cushion = AUDIO_CUSHION_MS / 1000.0 * app->audio_freq * 4.0;
+    double queued = SDL_GetAudioStreamQueued(app->audio);
+    if (app->audio_started && queued < cushion) left -= (cushion - queued) / 2;
+    return left > 0 ? (uint32_t)left & ~7u : 0;
+}
+
+// Graphics tasks run as the game starts them, so the game's threads (sound included) wait while a
+// frame is drawn. The in-between image is skipped for a frame when the last real frame plus the
+// last in-between one took more than INTERP_BUDGET_MS, which keeps heavy scenes (the intro at 2x)
+// within the 33 ms of a 30 fps frame instead of starving the sound.
+#define INTERP_BUDGET_MS 25.0
+
+static double ms_since(uint64_t t0) {
+    return (double)(SDL_GetPerformanceCounter() - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+}
+
+static void render_task(App *app, uint32_t dl) {
+    // MK64_TRACE=N: write every command of the first graphics task after retrace N to dl_trace.txt
+    static int traced;
+    const char *trace = SDL_getenv("MK64_TRACE");
+    if (trace && !traced && ultra_stats.retraces >= (uint64_t)SDL_atoi(trace)) {
+        rsp_trace = fopen("dl_trace.txt", "w");
+        traced = 1;
+    }
+    static double real_ms, interp_ms, total_ms;
+    static int frames;
+    uint64_t t0 = SDL_GetPerformanceCounter();
+    rsp_run_display_list(app->rdram, dl);
+    real_ms = ms_since(t0);
+    // Deterministic runs always interpolate (the time measured varies from run to run).
+    if (app->interp && (ultra_deterministic || real_ms + interp_ms <= INTERP_BUDGET_MS)) {
+        uint64_t t1 = SDL_GetPerformanceCounter();
+        rsp_run_display_list_interp(app->rdram, dl, 0.5f);
+        interp_ms = ms_since(t1);
+    } else {
+        interp_ms *= 0.9;  // try again once things look lighter
+    }
+    total_ms += ms_since(t0);
+    if (++frames == 300) {
+        ultra_log("render: %.2f ms por quadro (media de 300)", total_ms / frames);
+        total_ms = 0;
+        frames = 0;
+    }
+    if (rsp_trace) {
+        fclose(rsp_trace);
+        rsp_trace = NULL;
+    }
 }
 
 static void on_task(void *user, uint32_t task) {
@@ -116,29 +204,7 @@ static void on_task(void *user, uint32_t task) {
         abi_run(app->rdram, list, size);
         return;
     }
-    if (type != 1) return;
-    // MK64_TRACE=N: write every command of the first graphics task after retrace N to dl_trace.txt
-    static int traced;
-    const char *trace = SDL_getenv("MK64_TRACE");
-    if (trace && !traced && ultra_stats.retraces >= (uint64_t)SDL_atoi(trace)) {
-        rsp_trace = fopen("dl_trace.txt", "w");
-        traced = 1;
-    }
-    uint64_t t0 = SDL_GetPerformanceCounter();
-    rsp_run_display_list(app->rdram, mem_r32(app->rdram, task + 48));
-    if (app->interp) rsp_run_display_list_interp(app->rdram, mem_r32(app->rdram, task + 48), 0.5f);
-    static double total_ms;
-    static int frames;
-    total_ms += (double)(SDL_GetPerformanceCounter() - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
-    if (++frames == 300) {
-        ultra_log("render: %.2f ms por quadro (media de 300)", total_ms / frames);
-        total_ms = 0;
-        frames = 0;
-    }
-    if (rsp_trace) {
-        fclose(rsp_trace);
-        rsp_trace = NULL;
-    }
+    if (type == 1) render_task(app, mem_r32(app->rdram, task + 48));
 }
 
 static void save_bmp(const char *name, int w, int h, uint32_t *pixels) {
@@ -175,9 +241,13 @@ static int on_retrace(void *user) {
         }
     }
     input_update();
-    if (app->audio && ultra_stats.retraces % 600 == 0)
-        ultra_log("audio: fila %d bytes (%.0f ms)", SDL_GetAudioStreamQueued(app->audio),
-                  app->audio_freq ? SDL_GetAudioStreamQueued(app->audio) / 4.0 * 1000.0 / app->audio_freq : 0.0);
+    if (app->audio && ultra_stats.retraces % 600 == 0) {
+        static uint64_t last_bytes;
+        ultra_log("audio: fila %.0f ms, %u vezes vazia, %.1f s de som nos ultimos 600 retraces",
+                  SDL_GetAudioStreamQueued(app->audio) / 4.0 * 1000.0 / app->audio_freq, app->underruns,
+                  (app->audio_bytes - last_bytes) / 4.0 / app->audio_freq);
+        last_bytes = app->audio_bytes;
+    }
     static uint32_t reported_ops;
     if (abi_unknown_ops != reported_ops) {
         reported_ops = abi_unknown_ops;
