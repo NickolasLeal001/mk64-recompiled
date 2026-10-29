@@ -87,9 +87,19 @@ src/           main, carregamento da ROM, janela, config
 > - Áudio: tabelas tipo 1/2/3 (bancos/samples/sequências) e o mapa sequência→banco, com tamanhos tirados das próprias tabelas.
 > - `tools/mio0.py` descomprime e valida: os 3.354 blocos MIO0 decodificam sem erro (zero falsos positivos).
 >
+> - Bancos: cada fim agora é limitado pelo início literal da região seguinte. Tabelas de índice achadas:
+>
+> | Banco | Índice | Cobertura |
+> |---|---|---|
+> | `0x145470` (karts) | `0x800DDEC0` (3.959 ptrs) + `0x800E1F20` (256) | 2.567/2.568 MIO0 |
+> | | Paletas por personagem `0x800E2340` | uma em cada um dos 8 blocos crus (~0x24389 B) |
+> | `0x641f70` | `0x800E54D0` (20, uma por pista) | 20/418 MIO0 |
+> | `0x729a30` (menus/HUD) | descritores de 0x28 B em `common_data` (ROM `0x12aae4`) | 324/325 MIO0 |
+>
 > **Falta:**
-> - O fim dos 4 "bancos" (`0x145470`, `0x641f70`, `0x729a30`, `0x7fa3c0`, 57% da ROM) é inferido: cada um vai até o próximo início conhecido. Falta achar as tabelas que listam cada asset dentro deles.
-> - Separar o que é cada faixa das pistas. Os nomes `geo`/`packed`/`seg9` são provisórios.
+> - Banco `0x641f70`: 398 blocos MIO0 e ~0x72306 bytes crus sem referência achada. [inf] São referenciados pelos dados das pistas (texturas).
+> - Banco `0x7fa3c0`: conteúdo não identificado. Só 2 blocos MIO0 nos seus 0x2E110 bytes.
+> - Faixas das pistas: os nomes `geo`/`packed`/`seg9` continuam provisórios.
 > - Tipo de save (item 4).
 
 Meta: cada byte da ROM classificado como código, dados, asset comprimido, áudio ou tabela.

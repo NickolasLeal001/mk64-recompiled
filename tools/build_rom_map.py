@@ -67,15 +67,23 @@ def audio_regions(rom):
                     "rom_end": hex(end), "evidence": "FUN_800baa80(0xbe90e0, ..., 0x100)"})
     return regions
 
-# Bases added to (segmented address & 0xffffff) before DMA. Their ends are not proven yet:
-# each is assumed to run until the next known region starts.
+# Bases added to (segmented address & 0xffffff) before DMA. Each bank ends where the next
+# region proven by a literal in the code begins; "index" lists the pointer tables found into it.
 BANKS = [
     ("bank_0x145470", 0x145470, "FUN_80027040/80027560/80027a20/80004ef0: (addr & 0xffffff) + 0x145470; "
-     "indexed by player character (+0x254)"),
+     "indexed by player character (+0x254)",
+     [{"vram": "0x800ddec0", "where": "main", "entries": 3959, "what": "kart frames (MIO0), segment 0x0f"},
+      {"vram": "0x800e1f20", "where": "main", "entries": 256, "what": "MIO0 frames, segment 0x0f"},
+      {"vram": "0x800e2340", "where": "main", "entries": 8,
+       "what": "per-character palette (FUN_80027a20 reads 0x200 bytes); each lies in that character's raw block"},
+      {"vram": "0x800ddeb0", "where": "main", "entries": 8, "what": "per-character u16 frame DMA size"}]),
     ("bank_0x641f70", 0x641F70, "FUN_8006ed94/802a84f4/802a85cc: (addr & 0xffffff) + 0x641f70, "
-     "decompressed into the heap"),
-    ("bank_0x729a30", 0x729A30, "FUN_80099000/80099aec/80099ec4: (addr & 0xffffff) + 0x729a30"),
-    ("bank_0x7fa3c0", 0x7FA3C0, "FUN_80099088: (addr & 0xffffff) + 0x7fa3c0"),
+     "decompressed into the heap",
+     [{"vram": "0x800e54d0", "where": "main", "entries": 20, "what": "one MIO0 per course"}]),
+    ("bank_0x729a30", 0x729A30, "FUN_80099000/80099aec/80099ec4: (addr & 0xffffff) + 0x729a30",
+     [{"rom": "0x12aae4", "where": "common_data", "stride": "0x28",
+       "what": "menu/HUD texture descriptors; reference 324 of the 325 MIO0 blocks"}]),
+    ("bank_0x7fa3c0", 0x7FA3C0, "FUN_80099088: (addr & 0xffffff) + 0x7fa3c0", []),
 ]
 
 
@@ -105,11 +113,13 @@ def main():
     regions += course_regions(rom)
     regions += audio_regions(rom)
 
-    starts = [int(r["rom_start"], 16) for r in regions] + [b[1] for b in BANKS]
-    for name, start, ev in BANKS:
-        end = min([s for s in starts if s > start] + [len(rom)])
+    starts = {int(r["rom_start"], 16): r["name"] for r in regions}
+    starts.update({b[1]: b[0] for b in BANKS})
+    for name, start, ev, index in BANKS:
+        end = min(s for s in starts if s > start)
         regions.append({"name": name, "kind": "bank", "rom_start": hex(start), "rom_end": hex(end),
-                        "evidence": ev, "end_is_inferred": True})
+                        "evidence": ev, "end_evidence": f"next literal region {starts[end]} starts here",
+                        "index": index})
 
     def gap(s, e):
         # A gap made of a few runs of one repeated byte (alignment, then 0xff fill) is padding;

@@ -66,7 +66,33 @@
    "rom_start": "0x145470",
    "rom_end": "0x641f70",
    "evidence": "FUN_80027040/80027560/80027a20/80004ef0: (addr & 0xffffff) + 0x145470; indexed by player character (+0x254)",
-   "end_is_inferred": true,
+   "end_evidence": "next literal region bank_0x641f70 starts here",
+   "index": [
+    {
+     "vram": "0x800ddec0",
+     "where": "main",
+     "entries": 3959,
+     "what": "kart frames (MIO0), segment 0x0f"
+    },
+    {
+     "vram": "0x800e1f20",
+     "where": "main",
+     "entries": 256,
+     "what": "MIO0 frames, segment 0x0f"
+    },
+    {
+     "vram": "0x800e2340",
+     "where": "main",
+     "entries": 8,
+     "what": "per-character palette (FUN_80027a20 reads 0x200 bytes); each lies in that character's raw block"
+    },
+    {
+     "vram": "0x800ddeb0",
+     "where": "main",
+     "entries": 8,
+     "what": "per-character u16 frame DMA size"
+    }
+   ],
    "mio0_blocks": 2568,
    "mio0_bytes": "0x3d6296"
   },
@@ -76,7 +102,15 @@
    "rom_start": "0x641f70",
    "rom_end": "0x724220",
    "evidence": "FUN_8006ed94/802a84f4/802a85cc: (addr & 0xffffff) + 0x641f70, decompressed into the heap",
-   "end_is_inferred": true,
+   "end_evidence": "next literal region fixed_0x724220 starts here",
+   "index": [
+    {
+     "vram": "0x800e54d0",
+     "where": "main",
+     "entries": 20,
+     "what": "one MIO0 per course"
+    }
+   ],
    "mio0_blocks": 418,
    "mio0_bytes": "0x6fd57"
   },
@@ -95,7 +129,15 @@
    "rom_start": "0x729a30",
    "rom_end": "0x7fa3c0",
    "evidence": "FUN_80099000/80099aec/80099ec4: (addr & 0xffffff) + 0x729a30",
-   "end_is_inferred": true,
+   "end_evidence": "next literal region bank_0x7fa3c0 starts here",
+   "index": [
+    {
+     "rom": "0x12aae4",
+     "where": "common_data",
+     "stride": "0x28",
+     "what": "menu/HUD texture descriptors; reference 324 of the 325 MIO0 blocks"
+    }
+   ],
    "mio0_blocks": 325,
    "mio0_bytes": "0xbd014"
   },
@@ -105,7 +147,8 @@
    "rom_start": "0x7fa3c0",
    "rom_end": "0x8284d0",
    "evidence": "FUN_80099088: (addr & 0xffffff) + 0x7fa3c0",
-   "end_is_inferred": true,
+   "end_evidence": "next literal region course00_geo starts here",
+   "index": [],
    "mio0_blocks": 2,
    "mio0_bytes": "0x67b0"
   },
