@@ -28,7 +28,11 @@ FetchContent_MakeAvailable(SDL3)
 
 # GPU renderer (SDL_gpu on Vulkan): GLSL shaders compiled to SPIR-V by glslc from the Vulkan SDK
 # and embedded as C arrays. Without glslc the game builds with the software renderer only.
-find_program(GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin")
+# (VULKAN_SDK is missing from consoles opened before the SDK was installed: also look in its
+# default install folder, newest version first)
+file(GLOB VULKAN_SDK_BINS "C:/VulkanSDK/*/Bin")
+list(SORT VULKAN_SDK_BINS COMPARE NATURAL ORDER DESCENDING)
+find_program(GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin" ${VULKAN_SDK_BINS})
 set(GPU_SHADER_INC "")
 if(GLSLC)
   foreach(src rdp.vert rdp.frag)
