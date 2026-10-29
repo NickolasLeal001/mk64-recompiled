@@ -27,6 +27,13 @@ int rdp_tile_size(int tile, int *w, int *h);
 
 // Converts the RGBA16 image at `addr` to 32-bit ABGR8888 (SDL_PIXELFORMAT_ABGR8888) for display.
 void rdp_read_framebuffer(uint32_t addr, int width, int height, uint32_t *out);
+// Internal resolution (1-4). Above 1 the RDRAM image is still drawn at 1x (what the game sees),
+// and an enlarged copy is drawn for display.
+void rdp_set_scale(int scale);
+int rdp_get_scale(void);
+// Enlarged image of the framebuffer at `addr`, (width*scale)x(height*scale) pixels in the format
+// of rdp_read_framebuffer. Returns the scale, or 0 when there is none (scale 1, unknown image).
+int rdp_read_framebuffer_hires(uint32_t addr, int width, int height, uint32_t *out);
 int rdp_cimg_width(void);
 
 #endif

@@ -15,6 +15,7 @@ typedef struct Config {
     int fullscreen;
     int smooth;      // linear filtering instead of nearest
     int volume;      // 0..100
+    int internal;    // internal resolution, multiple of 320x240 (1-4)
     int keys[CFG_KEY_COUNT];  // SDL_Scancode
 } Config;
 

@@ -24,6 +24,9 @@ typedef struct App {
     SDL_Window *window;
     SDL_Renderer *renderer;
     SDL_Texture *screen;
+    SDL_Texture *screen_hi;  // internal resolution above 1x
+    uint32_t *hpixels;
+    int showing_hi;
     uint8_t *rdram;
     uint32_t pixels[FB_W * FB_H];
     int show_status;
@@ -131,13 +134,23 @@ static void on_task(void *user, uint32_t task) {
     }
 }
 
-static void save_shot(App *app) {
-    char name[64];
-    SDL_snprintf(name, sizeof name, "frame_%05llu.bmp", (unsigned long long)ultra_stats.retraces);
-    SDL_Surface *s = SDL_CreateSurfaceFrom(FB_W, FB_H, SDL_PIXELFORMAT_ABGR8888, app->pixels, FB_W * 4);
+static void save_bmp(const char *name, int w, int h, uint32_t *pixels) {
+    SDL_Surface *s = SDL_CreateSurfaceFrom(w, h, SDL_PIXELFORMAT_ABGR8888, pixels, w * 4);
     if (s) {
         SDL_SaveBMP(s, name);
         SDL_DestroySurface(s);
+    }
+}
+
+// The 1x frame (the one hashed for replays) and, with a higher internal resolution, the enlarged one.
+static void save_shot(App *app) {
+    char name[64];
+    SDL_snprintf(name, sizeof name, "frame_%05llu.bmp", (unsigned long long)ultra_stats.retraces);
+    save_bmp(name, FB_W, FB_H, app->pixels);
+    if (app->showing_hi) {
+        int s = app->showing_hi;
+        SDL_snprintf(name, sizeof name, "frame_%05llu_hi.bmp", (unsigned long long)ultra_stats.retraces);
+        save_bmp(name, FB_W * s, FB_H * s, app->hpixels);
     }
 }
 
@@ -166,6 +179,9 @@ static int on_retrace(void *user) {
     if (ultra_stats.framebuffer) {
         rdp_read_framebuffer(ultra_stats.framebuffer, FB_W, FB_H, app->pixels);
         if (app->screen) SDL_UpdateTexture(app->screen, NULL, app->pixels, FB_W * 4);
+        app->showing_hi = app->hpixels ? rdp_read_framebuffer_hires(ultra_stats.framebuffer, FB_W, FB_H, app->hpixels) : 0;
+        if (app->showing_hi && app->screen_hi)
+            SDL_UpdateTexture(app->screen_hi, NULL, app->hpixels, FB_W * app->showing_hi * 4);
         if (app->shots && n % (uint64_t)app->shots == 0 && n >= app->shots_from && n <= app->shots_to) {
             save_shot(app);
             // FNV-1a of the frame, for replay regression checks.
@@ -225,7 +241,7 @@ static int on_retrace(void *user) {
     if (!app->renderer) return 1;  // headless
     SDL_SetRenderDrawColor(app->renderer, 0, 0, 0, 255);
     SDL_RenderClear(app->renderer);
-    SDL_RenderTexture(app->renderer, app->screen, NULL, NULL);
+    SDL_RenderTexture(app->renderer, app->showing_hi ? app->screen_hi : app->screen, NULL, NULL);
     if (!app->show_status) {
         SDL_RenderPresent(app->renderer);
         return 1;
@@ -307,6 +323,18 @@ int main(int argc, char **argv) {
 
     app.rdram = calloc(RDRAM_SIZE, 1);
     rdp_reset(app.rdram);
+    // Internal resolution: mk64.ini, or MK64_RES_SCALE (headless runs default to 1x).
+    const char *res = SDL_getenv("MK64_RES_SCALE");
+    int internal = res ? SDL_clamp(SDL_atoi(res), 1, 4) : headless ? 1 : config.internal;
+    rdp_set_scale(internal);
+    if (internal > 1) {
+        app.hpixels = malloc(sizeof(uint32_t) * FB_W * FB_H * internal * internal);
+        if (app.renderer) {
+            app.screen_hi = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING,
+                                              FB_W * internal, FB_H * internal);
+            SDL_SetTextureScaleMode(app.screen_hi, config.smooth ? SDL_SCALEMODE_LINEAR : SDL_SCALEMODE_NEAREST);
+        }
+    }
     rsp_reset();
     // The audio microcode's resampling filter, at ROM 0xF5A00 in this (SHA-1 checked) ROM.
     if (!abi_init(app.rom.data, app.rom.size, 0xF5A00)) fprintf(stderr, "aviso: tabela de reamostragem nao encontrada\n");

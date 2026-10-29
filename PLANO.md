@@ -365,7 +365,8 @@ Para cada sistema já entendido (controle → esterço → aceleração → drif
 >   - `mk64.ini` ao lado do executável (criado com o padrão): escala da janela, tela cheia (F11 alterna), filtro nítido/suave, volume e mapa completo do teclado (nomes de tecla do SDL).
 >   - Renderizador 2,3× mais rápido sem mudar nenhum pixel (pior caso 13,9 ms por quadro).
 >   - Rasterização em faixas paralelas: cada primitiva é gravada com um retrato do estado do RDP (copiado só quando muda) e as faixas de linhas são desenhadas em threads. Pior caso 2,8 ms por quadro (Wario Stadium), os 20 replays continuam idênticos e a suíte caiu de 445 s para 78 s. `MK64_RENDER_THREADS` escolhe o número de threads e `MK64_RENDER_IMMEDIATE` volta ao desenho imediato.
-> - **Falta:** resolução interna maior e widescreen, que exigem desenhar num buffer próprio em vez do framebuffer de 320×240 na RAM. Também falta 60 fps com interpolação.
+>   - Resolução interna de 1× a 4× (`resolucao_interna` no `mk64.ini`, padrão 2; `MK64_RES_SCALE` sobrepõe). Cada lote de primitivas é desenhado duas vezes: em 1× na RDRAM, que é o que o jogo e os replays veem, e ampliado numa imagem própria por endereço de framebuffer, usada só na tela. Uma cópia da RDRAM após cada lote detecta pixels escritos pela CPU, que entram ampliados. Os 20 replays dão os mesmos hashes com 1× e com 2×; em 2× o pior caso é ~12 ms por quadro.
+> - **Falta:** widescreen e 60 fps com interpolação.
 
 - Resolução livre e widescreen: corrigir o FOV, que hoje é ~58°/~68°/~45° conforme o número de telas.
 - 60 fps com interpolação de matrizes.

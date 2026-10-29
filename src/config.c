@@ -27,6 +27,8 @@ static void write_default(const char *path) {
     fprintf(f, "# MK64 Port - configuracao (apague este arquivo para voltar ao padrao)\n\n");
     fprintf(f, "# Janela: escala inteira da imagem 320x240, tela cheia (F11 alterna) e filtro\n");
     fprintf(f, "escala = 3\ntela_cheia = 0\n# filtro: nitido ou suave\nfiltro = nitido\n\n");
+    fprintf(f, "# Resolucao interna: 1 = 320x240 original, 2 = 640x480, ate 4 (mais pesado)\n");
+    fprintf(f, "resolucao_interna = 2\n\n");
     fprintf(f, "# Volume de 0 a 100\nvolume = 100\n\n");
     fprintf(f, "# Teclado: nomes de tecla do SDL (ex.: X, Return, Left Shift, Space, Up)\n");
     for (int k = 0; k < CFG_KEY_COUNT; k++) fprintf(f, "tecla_%s = %s\n", KEYS[k].key, KEYS[k].def);
@@ -45,6 +47,7 @@ void config_load(void) {
     config.fullscreen = 0;
     config.smooth = 0;
     config.volume = 100;
+    config.internal = 2;
     for (int k = 0; k < CFG_KEY_COUNT; k++) config.keys[k] = SDL_GetScancodeFromName(KEYS[k].def);
 
     char path[1024];
@@ -65,6 +68,7 @@ void config_load(void) {
         if (!strcmp(key, "escala")) config.scale = SDL_clamp(SDL_atoi(val), 1, 8);
         else if (!strcmp(key, "tela_cheia")) config.fullscreen = SDL_atoi(val) != 0;
         else if (!strcmp(key, "filtro")) config.smooth = !strcmp(val, "suave");
+        else if (!strcmp(key, "resolucao_interna")) config.internal = SDL_clamp(SDL_atoi(val), 1, 4);
         else if (!strcmp(key, "volume")) config.volume = SDL_clamp(SDL_atoi(val), 0, 100);
         else if (!strncmp(key, "tecla_", 6)) {
             for (int k = 0; k < CFG_KEY_COUNT; k++) {
