@@ -1,4 +1,4 @@
-# MK64 Port
+# mk64-recompiled
 
 A native Windows port of **Mario Kart 64 (USA)**, built by statically recompiling the game's
 MIPS code from your own ROM into C and running it on a PC replacement for the N64 libraries.
