@@ -1,0 +1,10 @@
+# Never commit game data: the port reads the user's own ROM at runtime.
+*.z64
+*.v64
+*.n64
+*.bin
+*.eep
+assets/
+
+build/
+generated/
