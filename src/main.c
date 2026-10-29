@@ -182,6 +182,10 @@ static void render_task(App *app, uint32_t dl) {
     } else {
         interp_ms *= 0.9;  // try again once things look lighter
     }
+    // MK64_GPU_TIMING: wait for the GPU, so the time below covers its work too (measurements only).
+    static int gpu_timing = -1;
+    if (gpu_timing < 0) gpu_timing = SDL_getenv("MK64_GPU_TIMING") != NULL;
+    if (app->gpu && gpu_timing) gpu_wait_idle();
     total_ms += ms_since(t0);
     if (++frames == 300) {
         ultra_log("render: %.2f ms por quadro (media de 300)", total_ms / frames);

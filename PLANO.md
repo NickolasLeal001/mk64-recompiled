@@ -419,6 +419,15 @@ Para cada sistema já entendido (controle → esterço → aceleração → drif
 >       - na janela, 16:9 a 4× com interpolação: 5,6–6,2 ms por quadro;
 >       - com as validation layers, só o aviso esperado de saída sem alvo no pipeline que limpa o Z;
 >       - queda para o software sem driver Vulkan (`VK_LOADER_DRIVERS_SELECT` sem correspondência), com e sem janela, com o motivo no log.
+>     - **M6 — desempenho e acabamento (2026-10-29):** tempo por quadro sem janela (`render: ms`, média da corrida, 16:9, interpolação ligada). `MK64_GPU_TIMING` espera a GPU no fim de cada quadro, para o tempo incluir o trabalho dela.
+
+>       | | CPU 2× | CPU 4× | GPU 2× | GPU 4× | GPU 8× | GPU 8× + espera |
+>       |---|---|---|---|---|---|---|
+>       | Wario Stadium | 19,1 ms | 61,4 ms | 5,0 ms | 5,0 ms | 5,0 ms | 6,0 ms |
+>       | 4 jogadores (Luigi) | 19,6 ms | 62,6 ms | 5,6 ms | 5,6 ms | 5,6 ms | 6,6 ms |
+
+>       - O software só em 1× (sem passada ampliada, com a lista intermediária) gasta 7,7–9,8 ms. Com a GPU, a CPU faz só a passada 1×, que os replays exigem, e a gravação do lote; a escala quase não pesa mais. Os caches de TMEM (por hash, por envio) e de retratos (o último retrato reaproveitado) bastam; não há pipeline por estado para guardar, porque são 5 ao todo.
+>       - Pendências conhecidas: o alfa da memória (G_BL_A_MEM) é aproximado por 1 (registrado no log se aparecer); z de decal com Z_UPD é gravado 0,002 abaixo; o texto do F1 vai para a barra de título no modo GPU.
 > - **Conferido (2026-10-29):** a tela larga não mostra objetos surgindo tarde nas laterais. Foram 34 quadros em 16:9, ao longo de uma volta do Luigi Raceway e do começo do Koopa Troopa Beach e do Bowser's Castle, com pista e cenário completos até as bordas. O teste de visão dos karts (`FUN_8001fb0c`) usa meio-ângulo de ±58° com 1 jogador, mais largo que a imagem 16:9.
 > - **Falta:** na interpolação, partículas que nascem ou somem no quadro não são interpoladas.
 

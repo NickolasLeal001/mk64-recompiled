@@ -28,6 +28,7 @@ int gpu_active(void) { return 0; }
 void gpu_present(SDL_GPUTexture *tex, int w, int h, int log_w, int smooth) { (void)tex; (void)w; (void)h; (void)log_w; (void)smooth; }
 SDL_GPUTexture *gpu_upload_image(int slot, const uint32_t *pixels, int w, int h) { (void)slot; (void)pixels; (void)w; (void)h; return NULL; }
 int gpu_download(SDL_GPUTexture *tex, int w, int h, uint32_t *out) { (void)tex; (void)w; (void)h; (void)out; return 0; }
+void gpu_wait_idle(void) {}
 void gpu_target_create(HiTarget *t) { t->gpu = NULL; }
 void gpu_target_release(HiTarget *t) { t->gpu = NULL; }
 void gpu_patch(HiTarget *t, int x0, int y0, int w, int h, const uint32_t *words) { (void)t; (void)x0; (void)y0; (void)w; (void)h; (void)words; }
@@ -776,6 +777,8 @@ void gpu_present(SDL_GPUTexture *tex, int w, int h, int log_w, int smooth) {
     }
     SDL_SubmitGPUCommandBuffer(cmd);
 }
+
+void gpu_wait_idle(void) { SDL_WaitForGPUIdle(g_dev); }
 
 int gpu_download(SDL_GPUTexture *tex, int w, int h, uint32_t *out) {
     SDL_GPUTransferBufferCreateInfo bi = {SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD, (Uint32)(w * h * 4), 0};

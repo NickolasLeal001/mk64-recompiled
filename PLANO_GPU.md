@@ -1,5 +1,7 @@
 # Plano: desenho na GPU (imagem de exibição)
 
+> **Estado (2026-10-29): executado, etapas M0 a M6.** O registro de cada etapa, com resultados e pendências, está no `PLANO.md` (fase 10, "Desenho na GPU").
+
 Plano para executar em outra sessão. Ele parte do estado do repositório em 2026-10-29: todas as fases do `PLANO.md` concluídas ou pausadas, 26 replays passando.
 
 ## Objetivo
