@@ -59,13 +59,13 @@ static void adpcm(uint8_t flags, uint32_t state) {
     int count = (A.count + 31) & ~31;
     while (count > 0) {
         uint8_t code = g_dmem[in++ & 0xFFFF];
-        int scale = code >> 4;
+        int scale = code >> 4, shift = scale < 12 ? 12 - scale : 0;
         const int16_t *book1 = A.table + ((code & 15) << 4), *book2 = book1 + 8;
         int16_t frame[16];
         for (int k = 0; k < 8; k++) {
             uint8_t b = g_dmem[in++ & 0xFFFF];
-            frame[2 * k] = (int16_t)((int16_t)((uint16_t)(b >> 4) << 12) >> (12 - scale));
-            frame[2 * k + 1] = (int16_t)((int16_t)((uint16_t)(b & 15) << 12) >> (12 - scale));
+            frame[2 * k] = (int16_t)((int16_t)((uint16_t)(b >> 4) << 12) >> shift);
+            frame[2 * k + 1] = (int16_t)((int16_t)((uint16_t)(b & 15) << 12) >> shift);
         }
         for (int half = 0; half < 2; half++) {
             const int16_t *src = frame + 8 * half;
@@ -127,7 +127,7 @@ static void envmixer(uint32_t w0, uint32_t w1) {
     uint32_t wet[2] = {((w1 >> 8) & 0xFF) << 4, (w1 & 0xFF) << 4};
     uint16_t vols[2] = {A.vol[0], A.vol[1]};
     uint16_t vol_wet = A.vol_wet;
-    n = (n + 15) & ~15;
+    n = (n + 7) & ~7;
     while (n > 0) {
         for (int i = 0; i < 8; i++) {
             int16_t s = dm16(in);
@@ -136,7 +136,7 @@ static void envmixer(uint32_t w0, uint32_t w1) {
             for (int j = 0; j < 2; j++) sides[j] = (int16_t)(((s * vols[j]) >> 16) ^ negs[j]);
             for (int j = 0; j < 2; j++) {
                 dw16(dry[j], clamp16(dm16(dry[j]) + sides[j]));
-                dw16(wet[j], clamp16(dm16(wet[j]) + ((sides[swap ? j : 1 - j] * vol_wet) >> 16)));
+                dw16(wet[j], clamp16(dm16(wet[j]) + ((sides[swap ? 1 - j : j] * vol_wet) >> 16)));
                 dry[j] += 2;
                 wet[j] += 2;
             }
@@ -188,10 +188,10 @@ void abi_run(uint8_t *rdram, uint32_t list, uint32_t size) {
             }
             break;
         }
-        case 0x0D: {       // INTERLEAVE(count >> 4, out, left, right): per-channel byte count
-            uint16_t o = (uint16_t)w0, l = (uint16_t)(w1 >> 16), r = (uint16_t)w1;
+        case 0x0D: {       // INTERLEAVE(left, right): to SETBUFF's out, SETBUFF's count bytes per channel
+            uint16_t o = A.out, l = (uint16_t)(w1 >> 16), r = (uint16_t)w1;
             int16_t tmp[4096];
-            uint32_t frames = packed / 2;
+            uint32_t frames = A.count / 2u;
             if (frames > 2048) frames = 2048;
             for (uint32_t j = 0; j < frames; j++) { tmp[2 * j] = dm16(l + 2 * j); tmp[2 * j + 1] = dm16(r + 2 * j); }
             for (uint32_t j = 0; j < 2 * frames; j++) dw16(o + 2 * j, tmp[j]);

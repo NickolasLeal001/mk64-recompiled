@@ -39,7 +39,7 @@ typedef struct App {
     uint64_t shots_from, shots_to;
     uint64_t exit_at;  // MK64_EXIT_AT: stop after this retrace
     SDL_AudioStream *audio;
-    uint32_t audio_freq;
+    uint32_t audio_freq, audio_freq_out;  // rate of the game, rate the stream was set up for
     FILE *wav;  // MK64_WAV: copy of everything sent to the speakers
     uint32_t wav_bytes;
     Rom rom;
@@ -69,8 +69,9 @@ static void finish_wav(void) {
 
 static void on_ai_buffer(void *user, uint32_t addr, uint32_t size, uint32_t freq) {
     App *app = user;
-    if (!freq || size == 0 || size > 0x10000 || ultra_deterministic) return;
-    if (!app->audio || app->audio_freq != freq) {
+    if (!freq || size == 0 || size > 0x10000) return;
+    app->audio_freq = freq;
+    if (!ultra_deterministic && (!app->audio || app->audio_freq_out != freq)) {
         SDL_AudioSpec spec = {SDL_AUDIO_S16, 2, (int)freq};
         if (!app->audio) {
             app->audio = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &spec, NULL, NULL);
@@ -81,7 +82,7 @@ static void on_ai_buffer(void *user, uint32_t addr, uint32_t size, uint32_t freq
         } else {
             SDL_SetAudioStreamFormat(app->audio, &spec, NULL);
         }
-        app->audio_freq = freq;
+        app->audio_freq_out = freq;
     }
     static int16_t pcm[0x8000];
     uint32_t n = size / 2;

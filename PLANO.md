@@ -301,6 +301,7 @@ Substitui o sistema operacional e o hardware do N64:
 >   - clipping ≤ 0,05%;
 >   - fila do dispositivo estável em ~13–16 ms (sem atraso crescente).
 > - **Não feito:** escuta humana e comparação com emulador. Ficam para a validação da fase 8.
+> - **Correção (2026-10-29, depois da primeira escuta: "só ruído"):** no microcódigo do MK64, o INTERLEAVE (`0d000000 llllrrrr`) usa o destino e o tamanho do SETBUFF anterior. Antes, os campos zerados da 1ª palavra eram lidos como destino e tamanho, nada era intercalado e o SAVEBUFF mandava lixo da DMEM para a saída. O ENVMIXER agora alinha a contagem a 8 amostras, e o reverb vai para o mesmo lado, ou para o lado oposto só com o bit de troca. A variação entre amostras vizinhas caiu de 0,57 para 0,25–0,35 da amplitude. `MK64_WAV` passou a gravar também no modo sem janela.
 
 - Interpretar as listas de comandos do microcódigo de áudio (ABI): `ADPCM`, `RESAMPLE`, `ENVMIXER`, `LOADBUFF`, `SAVEBUFF`, `INTERLEAVE`…
 - Gerar PCM e entregar ao SDL3 na taxa que o jogo pede ("SynoutRate" aparece nas strings).
