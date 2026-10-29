@@ -27,7 +27,7 @@ typedef struct App {
     SDL_Texture *screen_hi;  // internal resolution above 1x
     uint32_t *hpixels;
     int showing_hi, hi_w, hi_h;
-    int log_w;  // logical width: 320, or 427 in widescreen
+    int log_w;  // logical width: 320 at 4:3, wider for wider aspect ratios (240 lines high)
     int interp;                 // 60 fps: an in-between image before each new 30 fps frame
     uint32_t last_fb;           // framebuffer of the previous retrace
     int held, prev_held;        // retraces the current / previous framebuffer stayed on screen
@@ -420,9 +420,14 @@ int main(int argc, char **argv) {
     const char *exit_at = SDL_getenv("MK64_EXIT_AT");
     app.exit_at = exit_at ? (uint64_t)SDL_atoi(exit_at) : 0;
     config_load();
-    // Widescreen: mk64.ini, or MK64_WIDESCREEN (headless runs default to 4:3).
-    const char *wide_env = SDL_getenv("MK64_WIDESCREEN");
-    app.log_w = (wide_env ? SDL_atoi(wide_env) != 0 : !headless && config.widescreen) ? 427 : FB_W;  // 16:9 at 240 lines
+    // Aspect ratio: mk64.ini, or MK64_ASPECT ("21:9"; MK64_WIDESCREEN=1 is 16:9). Headless runs
+    // default to 4:3.
+    float aspect = !headless ? config.aspect : 4.0f / 3.0f;
+    const char *wide_env = SDL_getenv("MK64_WIDESCREEN"), *aspect_env = SDL_getenv("MK64_ASPECT");
+    if (wide_env) aspect = SDL_atoi(wide_env) ? 16.0f / 9.0f : 4.0f / 3.0f;
+    if (aspect_env) aspect = config_parse_aspect(aspect_env, aspect);
+    app.log_w = (int)(FB_H * aspect + 0.5f);
+    if (app.log_w < FB_W + 2) app.log_w = FB_W;
     if (!headless) {
         char title[128];
         SDL_snprintf(title, sizeof(title), "MK64 Port - %s (%s)", app.rom.title, app.rom.game_code);
@@ -453,11 +458,12 @@ int main(int argc, char **argv) {
     const char *res = SDL_getenv("MK64_RES_SCALE");
     int internal = res ? SDL_clamp(SDL_atoi(res), 1, 4) : headless ? 1 : config.internal;
     int wide = app.log_w != FB_W;
+    int max_w = SDL_max(2 * FB_W, app.log_w + 2);  // widest display copy, in 1x pixels
     // Interpolation: mk64.ini, or MK64_INTERP (headless runs default to off).
     const char *interp = SDL_getenv("MK64_INTERP");
     app.interp = interp ? SDL_atoi(interp) != 0 : !headless && config.interp;
-    rdp_set_scale(internal, wide, app.interp);
-    if (internal > 1 || wide || app.interp) app.hpixels = malloc(sizeof(uint32_t) * 2 * FB_W * FB_H * internal * internal);
+    rdp_set_scale(internal, wide ? aspect : 4.0f / 3.0f, app.interp);
+    if (internal > 1 || wide || app.interp) app.hpixels = malloc(sizeof(uint32_t) * max_w * FB_H * internal * internal);
     rsp_reset();
     // The audio microcode's resampling filter, at ROM 0xF5A00 in this (SHA-1 checked) ROM.
     if (!abi_init(app.rom.data, app.rom.size, 0xF5A00)) fprintf(stderr, "aviso: tabela de reamostragem nao encontrada\n");

@@ -27,13 +27,14 @@ int rdp_tile_size(int tile, int *w, int *h);
 
 // Converts the RGBA16 image at `addr` to 32-bit ABGR8888 (SDL_PIXELFORMAT_ABGR8888) for display.
 void rdp_read_framebuffer(uint32_t addr, int width, int height, uint32_t *out);
-// Internal resolution (1-4), widescreen and frame interpolation. With any of them, the RDRAM image
-// is still drawn at 1x (what the game sees), and an enlarged (and, for 320-pixel images, widened to
-// 16:9) copy is drawn for display.
-void rdp_set_scale(int scale, int widescreen, int interp);
+// Internal resolution (1-4), aspect ratio of the picture (4:3 up to 4:1) and frame interpolation.
+// With any of them, the RDRAM image is still drawn at 1x (what the game sees), and an enlarged
+// (and, for 320-pixel images, widened to the aspect ratio) copy is drawn for display.
+void rdp_set_scale(int scale, float aspect, int interp);
 int rdp_get_scale(void);
 // Display copy of the framebuffer at `addr`, in the format of rdp_read_framebuffer; its size goes
-// to out_w x out_h (at most (2 * width * scale) x (height * scale)). Returns 0 when there is none.
+// to out_w x out_h (at most (max(2 * width, 240 * aspect + 2) * scale) x (height * scale)).
+// Returns 0 when there is none.
 int rdp_read_framebuffer_hires(uint32_t addr, int width, int height, uint32_t *out, int *out_w, int *out_h);
 // In-between image of the framebuffer at `addr` (same format and size as the display copy), drawn
 // by the last interpolated run that targeted it; returns that run's id, or 0 when there is none.

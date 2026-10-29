@@ -61,8 +61,8 @@ static ZBuf g_zbuf, g_zhi;
 // game and the replays see, and at g_scale x into a private RGBA16 image per color image address,
 // used only for display. `shadow` is the RDRAM image as of the last flush, so pixels the CPU wrote
 // in between are found and copied (enlarged) into the private image.
-// Widescreen widens the private images of 320-pixel color images by `ox` pixels on each side
-// (16:9 at 240 lines); full-width scissors and rectangles reach the new edges.
+// A wider aspect ratio widens the private images of 320-pixel color images by `ox` pixels on each
+// side (240 lines high); full-width scissors and rectangles reach the new edges.
 typedef struct HiTarget {
     uint32_t addr;
     int w, ox, stride;  // 1x width; side margin and row length in enlarged pixels
@@ -73,7 +73,8 @@ typedef struct HiTarget {
     uint64_t used;
 } HiTarget;
 #define HI_TARGETS 8
-static int g_scale = 1, g_wide, g_hires;  // g_hires: the enlarged pass runs (scale > 1 or widescreen)
+static int g_scale = 1, g_hires;  // g_hires: the enlarged pass runs (scale > 1, wider or interpolated)
+static float g_aspect = 4.0f / 3.0f;  // of the display picture
 static HiTarget g_hi[HI_TARGETS];
 static uint64_t g_hi_clock;
 static __declspec(thread) int g_hipass;              // drawing the enlarged pass
@@ -84,7 +85,10 @@ static int g_interp;                                 // recording an interpolate
 static uint64_t g_interp_id;
 static RdpState g_rec_saved;
 
-static int hi_ox(int w) { return g_wide && w == 320 ? (320 * g_scale + 3) / 6 : 0; }
+static int hi_ox(int w) {
+    float extra = (240.0f * g_aspect - 320.0f) * (float)g_scale / 2.0f;
+    return w == 320 && extra >= 1.0f ? (int)(extra + 0.5f) : 0;
+}
 static int hi_stride(int w) { return w * g_scale + 2 * hi_ox(w); }
 
 // ---------------------------------------------------------------------------------------------
@@ -758,11 +762,11 @@ static HiTarget *hi_target(void) {
     return t;
 }
 
-void rdp_set_scale(int scale, int widescreen, int interp) {
+void rdp_set_scale(int scale, float aspect, int interp) {
     rdp_flush();
     g_scale = scale < 1 ? 1 : scale > 4 ? 4 : scale;
-    g_wide = widescreen != 0;
-    g_hires = g_scale > 1 || g_wide || interp;
+    g_aspect = aspect > 4.0f / 3.0f ? (aspect > 4.0f ? 4.0f : aspect) : 4.0f / 3.0f;
+    g_hires = g_scale > 1 || hi_ox(320) > 0 || interp;
     for (int k = 0; k < HI_TARGETS; k++) {
         free(g_hi[k].color);
         free(g_hi[k].shadow);

@@ -16,12 +16,13 @@ typedef struct Config {
     int smooth;      // linear filtering instead of nearest
     int volume;      // 0..100
     int internal;    // internal resolution, multiple of 320x240 (1-4)
-    int widescreen;  // 16:9 picture (wider view of the 3D scene)
+    float aspect;    // picture width / height: 4:3, or wider for a wider view of the 3D scene
     int interp;      // 60 fps display through in-between images
     int keys[CFG_KEY_COUNT];  // SDL_Scancode
 } Config;
 
 extern Config config;
 void config_load(void);
+float config_parse_aspect(const char *text, float fallback);
 
 #endif

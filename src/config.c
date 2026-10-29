@@ -29,8 +29,9 @@ static void write_default(const char *path) {
     fprintf(f, "escala = 3\ntela_cheia = 0\n# filtro: nitido ou suave\nfiltro = nitido\n\n");
     fprintf(f, "# Resolucao interna: 1 = 320x240 original, 2 = 640x480, ate 4 (mais pesado)\n");
     fprintf(f, "resolucao_interna = 2\n\n");
-    fprintf(f, "# Tela larga (16:9): mostra mais da pista nas laterais; o HUD fica no centro\n");
-    fprintf(f, "tela_larga = 0\n\n");
+    fprintf(f, "# Proporcao da imagem: 4:3 (original), 16:9, 16:10, 21:9, 32:9 ou outra no formato a:b.\n");
+    fprintf(f, "# Mais larga mostra mais da pista nas laterais; o HUD fica no centro.\n");
+    fprintf(f, "proporcao = 4:3\n\n");
     fprintf(f, "# 60 quadros por segundo: imagens intermediarias entre os quadros do jogo (30 por segundo)\n");
     fprintf(f, "interpolacao = 1\n\n");
     fprintf(f, "# Volume de 0 a 100\nvolume = 100\n\n");
@@ -46,13 +47,21 @@ static char *trim(char *s) {
     return s;
 }
 
+// "a:b" (or a plain number) as width / height, from 4:3 up to 4:1; `fallback` when unreadable.
+float config_parse_aspect(const char *text, float fallback) {
+    float a = 0, b = 1;
+    if (!text || SDL_sscanf(text, "%f:%f", &a, &b) < 1 || a <= 0 || b <= 0) return fallback;
+    float r = a / b;
+    return r < 4.0f / 3.0f ? 4.0f / 3.0f : r > 4.0f ? 4.0f : r;
+}
+
 void config_load(void) {
     config.scale = 3;
     config.fullscreen = 0;
     config.smooth = 0;
     config.volume = 100;
     config.internal = 2;
-    config.widescreen = 0;
+    config.aspect = 4.0f / 3.0f;
     config.interp = 1;
     for (int k = 0; k < CFG_KEY_COUNT; k++) config.keys[k] = SDL_GetScancodeFromName(KEYS[k].def);
 
@@ -75,7 +84,8 @@ void config_load(void) {
         else if (!strcmp(key, "tela_cheia")) config.fullscreen = SDL_atoi(val) != 0;
         else if (!strcmp(key, "filtro")) config.smooth = !strcmp(val, "suave");
         else if (!strcmp(key, "resolucao_interna")) config.internal = SDL_clamp(SDL_atoi(val), 1, 4);
-        else if (!strcmp(key, "tela_larga")) config.widescreen = SDL_atoi(val) != 0;
+        else if (!strcmp(key, "tela_larga")) config.aspect = SDL_atoi(val) ? 16.0f / 9.0f : 4.0f / 3.0f;  // older files
+        else if (!strcmp(key, "proporcao")) config.aspect = config_parse_aspect(val, config.aspect);
         else if (!strcmp(key, "interpolacao")) config.interp = SDL_atoi(val) != 0;
         else if (!strcmp(key, "volume")) config.volume = SDL_clamp(SDL_atoi(val), 0, 100);
         else if (!strncmp(key, "tecla_", 6)) {
