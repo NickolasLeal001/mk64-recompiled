@@ -404,12 +404,14 @@ Fase 0: criar o esqueleto CMake e o verificador de SHA-1. Fase 1, item 1: listar
 
 > - **Modo de teste:** `MK64_HEADLESS=1` (tempo virtual, sem janela/áudio, EEPROM em branco na pasta da execução) + `MK64_EXIT_AT`. `MK64_INPUT2` é um 2º controle roteirizado.
 > - `tools/replay.py`: roda e compara hashes de quadros. `--record` grava a referência; os BMPs ficam em `build/replays/<nome>/`. `tools/explore.ps1` monta folhas de contato para explorar menus.
-> - **20 replays em `tests/replays/`, todos passando duas vezes seguidas (~7,5 min):**
+> - **24 replays em `tests/replays/`, todos passando:**
 >   - título → menus → largada no Luigi Raceway;
 >   - Time Trials com aviso de Controller Pak e recordes da EEPROM;
 >   - largada em **cada uma das 16 pistas**;
 >   - **VS 2 jogadores** em tela dividida;
 >   - **Battle 2 jogadores** na Big Donut.
+>   - **VS 4 jogadores** no Luigi Raceway (tela em quatro) e **Battle 3 jogadores** na Big Donut (o 4º quadrante mostra o mapa). Com 3–4 controles conectados a abertura demora mais, então os menus vêm ~250 retraces depois; os controles 2–4 apertam B no retrace 1, sem o que a sequência muda.
+>   - **Recorde novo no Time Trials:** o piloto automático completa as 3 voltas do Luigi Raceway em 2'02"19, e a tela mostra "BEST RECORDS 1st 02'02"19 MARIO". O replay `tt_recorde_luigi` confere também o SHA-1 da EEPROM gravada (`check_eeprom` no `tools/replay.py`): o tempo (centésimos, 3 bytes) entra na tabela e na cópia de reserva.
 > - **EEPROM:** no primeiro boot o jogo grava os recordes padrão (512 bytes com checksum) em `mk64.eep`.
 > - **Correção:** neblina calculada depois do recorte no near plane (vértices atrás da câmera davam z/w sem sentido).
 > - **Piloto automático para testes:** `MK64_AUTOPILOT=n` dá ao jogador 1 as flags de kart da IA (`0x9010` em vez de `0xc010`, achadas num dump da RAM com `MK64_DUMPRAM`). A IA do próprio jogo pilota o Mario: ele completou as 3 voltas do Luigi Raceway (7º lugar). Ao terminar, o jogador volta a ser humano (bit `0x0800` = corrida terminada).
@@ -417,7 +419,5 @@ Fase 0: criar o esqueleto CMake e o verificador de SHA-1. Fase 1, item 1: listar
 >   - Endereços achados comparando dumps: contador de voltas `0x80164390` (s32 × 8, o mesmo que o código de debug da pausa altera) e progresso acumulado `0x801644d0` (float × 8, voltas + fração).
 >   - Replay `gp_corrida_completa`: 3 voltas, ranking, RETRY e nova largada; 82 quadros idênticos em duas execuções.
 > - **Aberto:**
->   - Pódio: exige terminar entre os 4 primeiros, e a IA pilotando o Mario terminou em 7º em todas as tentativas.
+>   - Pódio: exige terminar entre os 4 primeiros nas 4 corridas da copa. Com a IA pilotando o Mario, cada nova tentativa sai diferente (7º, 6º, 8º, 8º). Um START do piloto automático caía na largada seguinte e pausava o jogo para sempre; agora ele só aperta com o contador de voltas em 3 ou mais.
 >   - Choco Mountain aparece com muita neblina branca. A fórmula segue a referência; falta comparar com o original (fase 8).
->   - Pódio e gravação de um recorde novo: exigem completar corridas, ou seja, pilotar 3 voltas por roteiro ou com piloto automático.
->   - VS/Battle com 3–4 jogadores: roteiros dos controles 3 e 4.

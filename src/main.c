@@ -321,8 +321,11 @@ static int on_retrace(void *user) {
             mem_w16(app->rdram, 0x800F6990u, (uint16_t)((flags & ~0x1000) | 0x4000));
             driving = 0;
         }
-        // Race over: open the post-race menu with START, then take its first option with A.
-        if ((flags & 0x0800) && !SDL_getenv("MK64_AUTOPILOT_MANUAL")) {
+        // Race over: open the post-race menu with START, then take its first option with A. The
+        // finished flag outlives the race by a few frames; the lap counter (0x80164390, -1 while
+        // the next race is set up) keeps a late START from pausing the next start for good.
+        int32_t laps = (int32_t)mem_r32(app->rdram, 0x80164390u);
+        if ((flags & 0x0800) && laps >= 3 && !SDL_getenv("MK64_AUTOPILOT_MANUAL")) {
             uint64_t phase = n % 120;
             if (phase < 4) ultra_pads[0].buttons |= 0x1000;              // START
             else if (phase >= 60 && phase < 64) ultra_pads[0].buttons |= 0x8000;  // A
