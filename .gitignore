@@ -8,3 +8,5 @@ assets/
 
 build/
 generated/
+__pycache__/
+*.pyc
