@@ -111,7 +111,16 @@ static void on_task(void *user, uint32_t task) {
         rsp_trace = fopen("dl_trace.txt", "w");
         traced = 1;
     }
+    uint64_t t0 = SDL_GetPerformanceCounter();
     rsp_run_display_list(app->rdram, mem_r32(app->rdram, task + 48));
+    static double total_ms;
+    static int frames;
+    total_ms += (double)(SDL_GetPerformanceCounter() - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+    if (++frames == 300) {
+        ultra_log("render: %.2f ms por quadro (media de 300)", total_ms / frames);
+        total_ms = 0;
+        frames = 0;
+    }
     if (rsp_trace) {
         fclose(rsp_trace);
         rsp_trace = NULL;

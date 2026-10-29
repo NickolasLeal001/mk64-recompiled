@@ -63,6 +63,37 @@ void rdp_set_othermode(uint32_t hi, uint32_t lo) { R.om_hi = hi; R.om_lo = lo; }
 void rdp_get_othermode(uint32_t *hi, uint32_t *lo) { *hi = R.om_hi; *lo = R.om_lo; }
 int rdp_cimg_width(void) { return (int)R.cimg_width; }
 
+// Per-primitive work skipped when the current state does not need it (same results either way).
+static struct { int tex0, tex1, mem; } g_need;
+
+static int combiner_uses(int sel_a, int sel_b, int sel_c, int sel_d, int aa, int ab, int ac, int ad, int texel) {
+    // Color A/B/D and alpha A/B/D: 1 = TEXEL0, 2 = TEXEL1; color C adds 8/9 (texel alphas); alpha C 1/2.
+    return sel_a == texel || sel_b == texel || sel_d == texel || sel_c == texel || sel_c == texel + 7 ||
+           aa == texel || ab == texel || ad == texel || ac == texel;
+}
+
+static void update_needs(void) {
+    uint32_t h = R.combine_hi, l = R.combine_lo;
+    int two = CYCLE_TYPE() == CYC_2;
+    for (int texel = 1; texel <= 2; texel++) {
+        int u = combiner_uses((h >> 20) & 15, (l >> 28) & 15, (h >> 15) & 31, (l >> 15) & 7,
+                              (h >> 12) & 7, (l >> 12) & 7, (h >> 9) & 7, (l >> 9) & 7, texel);
+        if (two)
+            u |= combiner_uses((h >> 5) & 15, (l >> 24) & 15, h & 31, (l >> 6) & 7,
+                               (l >> 21) & 7, (l >> 3) & 7, (l >> 18) & 7, l & 7, texel);
+        if (texel == 1) g_need.tex0 = u; else g_need.tex1 = u;
+    }
+    // Memory color: input 1 of P/M (memory color) or of B (memory alpha). In 2-cycle mode any use in
+    // either cycle counts; in 1-cycle mode cycle 0 is final and, without FORCE_BL, only P is output.
+    int p0 = (R.om_lo >> 30) & 3, m0 = (R.om_lo >> 22) & 3, b0 = (R.om_lo >> 18) & 3;
+    int p1 = (R.om_lo >> 28) & 3, m1 = (R.om_lo >> 20) & 3, b1 = (R.om_lo >> 16) & 3;
+    if (two)
+        g_need.mem = p0 == 1 || m0 == 1 || b0 == 1 || p1 == 1 || m1 == 1 || b1 == 1;
+    else
+        g_need.mem = p0 == 1 || (FORCE_BL() && (m0 == 1 || b0 == 1));
+}
+
+
 static Color unpack32(uint32_t c) {
     Color o = {((c >> 24) & 0xFF) / 255.0f, ((c >> 16) & 0xFF) / 255.0f, ((c >> 8) & 0xFF) / 255.0f, (c & 0xFF) / 255.0f};
     return o;
@@ -363,7 +394,8 @@ static void write_pixel(int x, int y, Color comb, float shade_alpha, float z) {
         else if (z > cur) return;
     }
     uint32_t addr = R.cimg + (uint32_t)(y * (int)R.cimg_width + x) * 2;
-    Color mem = rgba16(mem_r16(g_ram, RAM(addr)));
+    Color mem = {0, 0, 0, 0};
+    if (g_need.mem) mem = rgba16(mem_r16(g_ram, RAM(addr)));
     Color out;
     if (CYCLE_TYPE() == CYC_2) {
         Color c0 = blend_cycle(0, comb, mem, shade_alpha, 0);
@@ -379,9 +411,9 @@ static Color shade_pixel(Color shade, float s, float t) {
     Inputs in;
     in.shade = shade;
     int tile = rsp_current_tile();
-    in.t0 = sample(tile, s, t);
-    in.t1 = CYCLE_TYPE() == CYC_2 ? sample(tile + 1, s, t) : in.t0;
     Color zero = {0, 0, 0, 0};
+    in.t0 = g_need.tex0 || (g_need.tex1 && CYCLE_TYPE() != CYC_2) ? sample(tile, s, t) : zero;
+    in.t1 = CYCLE_TYPE() == CYC_2 ? (g_need.tex1 ? sample(tile + 1, s, t) : zero) : in.t0;
     in.comb = zero;
     Color c = combine_cycle(0, &in);
     if (CYCLE_TYPE() == CYC_2) {
@@ -394,6 +426,7 @@ static Color shade_pixel(Color shade, float s, float t) {
 // ---------------------------------------------------------------------------------------------
 void rdp_triangle(const RdpVertex *v0, const RdpVertex *v1, const RdpVertex *v2) {
     if (!R.cimg_width) return;
+    update_needs();
     float area = (v1->x - v0->x) * (v2->y - v0->y) - (v2->x - v0->x) * (v1->y - v0->y);
     if (fabsf(area) < 1e-6f) return;
     float minx = fminf(v0->x, fminf(v1->x, v2->x)), maxx = fmaxf(v0->x, fmaxf(v1->x, v2->x));
@@ -451,6 +484,7 @@ static void fill_rect(int x0, int y0, int x1, int y1) {
 
 void rdp_texrect(uint32_t w0, uint32_t w1, uint32_t st, uint32_t dsdt, int flip) {
     if (!R.cimg_width) return;
+    update_needs();
     float lrx = ((w0 >> 12) & 0xFFF) / 4.0f, lry = (w0 & 0xFFF) / 4.0f;
     int tile = (w1 >> 24) & 7;
     float ulx = ((w1 >> 12) & 0xFFF) / 4.0f, uly = (w1 & 0xFFF) / 4.0f;
@@ -510,6 +544,7 @@ void rdp_command(uint32_t w0, uint32_t w1) {
         if (cyc == CYC_FILL) {
             fill_rect(ulx, uly, lrx, lry);
         } else {  // 1/2-cycle rectangles go through the combiner and blender
+            update_needs();
             Color white = {1, 1, 1, 1};
             for (int y = uly < R.sc_y0 ? R.sc_y0 : uly; y < lry && y < R.sc_y1; y++)
                 for (int x = ulx < R.sc_x0 ? R.sc_x0 : ulx; x < lrx && x < R.sc_x1; x++)

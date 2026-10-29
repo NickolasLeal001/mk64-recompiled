@@ -39,7 +39,9 @@ if(RECOMP_GENERATED)
   target_include_directories(mk64 PRIVATE runtime generated src gfx audio)
   target_link_libraries(mk64 PRIVATE recomp_game rom SDL3::SDL3-static)
   if(MSVC)
-    target_compile_options(mk64 PRIVATE /W4)
+    # /Ob2: RelWithDebInfo defaults to /Ob1, which leaves the renderer's per-pixel helpers
+    # (static, not marked inline) as real calls.
+    target_compile_options(mk64 PRIVATE /W4 /Ob2)
   endif()
 
   add_executable(recomp_link_check tests/recomp_link_check.c runtime/recomp_stubs.c)
