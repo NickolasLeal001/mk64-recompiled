@@ -458,7 +458,10 @@ static uint16_t *hi_pixel(int x, int y) { return &(g_ipass ? g_tgt->icolor : g_t
 
 static void write_pixel(int x, int y, Color comb, float shade_alpha, float z) {
     if (ALPHA_COMPARE() == 1 && comb.a < R.blend.a) return;
-    if ((CVG_X_ALPHA() || ALPHA_CVG_SEL()) && comb.a < 0.5f && !FORCE_BL()) return;
+    // Coverage x alpha (texture-edge modes) drops mostly transparent pixels. ALPHA_CVG_SEL alone
+    // only puts the coverage, full inside a triangle, in place of the alpha: fogged opaque
+    // surfaces, whose shade alpha is the fog factor, must not lose pixels to it.
+    if (CVG_X_ALPHA() && comb.a < 0.5f && !FORCE_BL()) return;
     float *zb = NULL;
     int zi = 0;
     if (Z_CMP() || Z_UPD()) {

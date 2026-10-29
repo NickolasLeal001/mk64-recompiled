@@ -268,6 +268,9 @@ Substitui o sistema operacional e o hardware do N64:
 >   - logo do título embaralhado: passo de linha errado em RGBA32.
 > - **Resultado:** logo da Nintendo, tela de título idêntica à original, menus completos (GAME/PLAYER/MAP SELECT), apresentação da pista e corrida no Luigi Raceway com HUD. **30 quadros/s na corrida**, a taxa do jogo.
 > - **Não feito:** comparação lado a lado com um emulador de referência (nenhum instalado). As capturas foram conferidas visualmente.
+> - **Correção (2026-10-29, relatada jogando: "o chão não está sendo renderizado"):** no Toad's Turnpike, no Choco Mountain e no Moo Moo Farm, a pista sumia.
+>   - Causa: o modo neblina + superfície opaca (`G_RM_FOG_SHADE_A` + `G_RM_AA_ZB_OPA_SURF2`) liga só o `ALPHA_CVG_SEL`. O RDP descartava pixels com alfa abaixo de 0,5 como se fosse `CVG_X_ALPHA`, e com neblina o alfa do sombreamento é o fator de neblina, perto de 0 junto à câmera. Um quadro do Toad's Turnpike perdia 113 mil pixels assim.
+>   - Agora só o `CVG_X_ALPHA` (bordas recortadas de árvores e placas) descarta por alfa. O reflexo do kart no gelo do Sherbet Land também passou a aparecer.
 > - **Ferramentas:**
 >   - `MK64_INPUT="de-ate:BOTOES;..."` (entrada roteirizada);
 >   - `MK64_SHOTS=n[:de[:ate]]` (capturas BMP);
@@ -438,4 +441,4 @@ Fase 0: criar o esqueleto CMake e o verificador de SHA-1. Fase 1, item 1: listar
 > - **Aberto:**
 >   - Pódio: exige terminar entre os 4 primeiros nas 4 corridas da copa. Com a IA do jogo pilotando o Mario, ~24 corridas seguidas (400 mil retraces, já sem travar) terminaram sempre entre 5º e 8º. Aumentar a velocidade máxima do Mario (+0x214, de 290 para 340, via `MK64_POKE`) não muda nada: no GP, o Mario pilotado pela IA leva ~3'55" nas 3 voltas, enquanto no Time Trials a mesma IA faz 2'03". A IA do GP regula a velocidade das CPUs em relação ao humano, e sem humano trava o próprio Mario. Para o pódio falta um piloto de teste próprio, com o kart ainda humano, seguindo os pontos de caminho da pista.
 > - **Corrigido (2026-10-29): a 5ª largada da sessão travava.** Depois de 4 corridas (por RETRY, DRIVER CHANGE ou fim de corrida), a largada seguinte ficava parada, sem Lakitu nem contagem, também em janela. A causa: `0x800CDA60` era tratada como `osInvalICache` e virava "não fazer nada", mas é o `bzero` (o corpo grava zeros). O jogo a usa para esvaziar a lista de objetos a cada largada (`0x80165c18`, 550 entradas de 0xE0 bytes). Sem isso, cada largada somava ~174 objetos, e na 5ª não havia vaga para o Lakitu. Achado com perfis de chamadas por função (`-DMK64_PROFILE=ON`, `MK64_PROFILE=a,b`), dumps de RAM em vários retraces (`MK64_DUMPRAM=a,b,...`) e estado das threads (`MK64_THREADDUMP=n`). Agora 8 largadas seguidas funcionam, e a lista fica em 174 objetos. Os replays foram regravados: o desenho só muda em detalhes de fumaça e pose, porque os objetos passam a começar do zero.
->   - Choco Mountain aparece com muita neblina branca. A fórmula segue a referência; falta comparar com o original (fase 8).
+>   - ~~Choco Mountain aparece com muita neblina branca.~~ Corrigido em 2026-10-29: era o chão faltando, não neblina. Ver a correção do `ALPHA_CVG_SEL` na fase 5.
