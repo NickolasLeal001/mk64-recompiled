@@ -388,6 +388,15 @@ void func_800CD0EC(uint8_t *rdram, Ctx *ctx) {  // osSpTaskStartGo(task)
     if (n <= 12 || n % 600 == 0)
         ultra_log("RSP task #%llu type=%u ucode=0x%08x data=0x%08x size=0x%x", (unsigned long long)n, type,
                   RD32(task + 16), RD32(task + 48), RD32(task + 52));
+    if (type == 1 && getenv("MK64_DUMP_DL") && ultra_stats.gfx_tasks <= 3) {
+        // Raw display list of the first graphics tasks, to check command encodings.
+        uint32_t dl = RD32(task + 48);
+        for (int k = 0; k < 160; k++) {
+            uint32_t w0 = RD32(dl + 8 * k), w1 = RD32(dl + 8 * k + 4);
+            ultra_log("  DL %08x: %08x %08x", dl + 8 * k, w0, w1);
+            if ((w0 >> 24) == 0xB8) break;
+        }
+    }
     if (g_host.on_task) g_host.on_task(g_host.user, task);
     // The task is complete as far as the game can tell: SP done, then (graphics) RDP done.
     ultra_post_event(OS_EVENT_SP);

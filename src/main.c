@@ -5,8 +5,13 @@
 #include <stdlib.h>
 
 #include "input.h"
+#include "rdp.h"
 #include "rom.h"
+#include "rsp.h"
 #include "ultra.h"
+
+#define FB_W 320
+#define FB_H 240
 
 static void fail(const char *msg) {
     fprintf(stderr, "%s\n", msg);
@@ -16,22 +21,68 @@ static void fail(const char *msg) {
 typedef struct App {
     SDL_Window *window;
     SDL_Renderer *renderer;
+    SDL_Texture *screen;
+    uint8_t *rdram;
+    uint32_t pixels[FB_W * FB_H];
+    int show_status;
+    int shots;  // MK64_SHOTS=N[:from[:to]]: save a BMP every N retraces within [from, to]
+    uint64_t shots_from, shots_to;
     Rom rom;
 } App;
 
-// Until the graphics phase, each retrace draws a status screen of what the game is doing.
+static void on_task(void *user, uint32_t task) {
+    App *app = user;
+    if (mem_r32(app->rdram, task) != 1) return;
+    // MK64_TRACE=N: write every command of the first graphics task after retrace N to dl_trace.txt
+    static int traced;
+    const char *trace = SDL_getenv("MK64_TRACE");
+    if (trace && !traced && ultra_stats.retraces >= (uint64_t)SDL_atoi(trace)) {
+        rsp_trace = fopen("dl_trace.txt", "w");
+        traced = 1;
+    }
+    rsp_run_display_list(app->rdram, mem_r32(app->rdram, task + 48));
+    if (rsp_trace) {
+        fclose(rsp_trace);
+        rsp_trace = NULL;
+    }
+}
+
+static void save_shot(App *app) {
+    char name[64];
+    SDL_snprintf(name, sizeof name, "frame_%05llu.bmp", (unsigned long long)ultra_stats.retraces);
+    SDL_Surface *s = SDL_CreateSurfaceFrom(FB_W, FB_H, SDL_PIXELFORMAT_ABGR8888, app->pixels, FB_W * 4);
+    if (s) {
+        SDL_SaveBMP(s, name);
+        SDL_DestroySurface(s);
+    }
+}
+
+// Each retrace shows the framebuffer the game handed to osViSwapBuffer (F1: status overlay).
 static int on_retrace(void *user) {
     App *app = user;
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_EVENT_QUIT || (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE)) return 0;
+        if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F1) app->show_status = !app->show_status;
     }
     input_update();
-    char line[128];
-    SDL_SetRenderDrawColor(app->renderer, 16, 16, 32, 255);
+    if (ultra_stats.framebuffer) {
+        rdp_read_framebuffer(ultra_stats.framebuffer, FB_W, FB_H, app->pixels);
+        SDL_UpdateTexture(app->screen, NULL, app->pixels, FB_W * 4);
+        uint64_t n = ultra_stats.retraces;
+        if (app->shots && n % (uint64_t)app->shots == 0 && n >= app->shots_from && n <= app->shots_to) save_shot(app);
+    }
+    SDL_SetRenderDrawColor(app->renderer, 0, 0, 0, 255);
     SDL_RenderClear(app->renderer);
-    SDL_SetRenderDrawColor(app->renderer, 230, 230, 230, 255);
-    SDL_RenderDebugText(app->renderer, 8, 8, "MK64 Port - runtime (Fase 4)");
+    SDL_RenderTexture(app->renderer, app->screen, NULL, NULL);
+    if (!app->show_status) {
+        SDL_RenderPresent(app->renderer);
+        return 1;
+    }
+    char line[128];
+    SDL_SetRenderDrawColor(app->renderer, 255, 255, 0, 255);
+    SDL_snprintf(line, sizeof line, "triangulos: %llu", (unsigned long long)rsp_stats_tris);
+    SDL_RenderDebugText(app->renderer, 8, 112, line);
     SDL_snprintf(line, sizeof line, "retraces: %llu", (unsigned long long)ultra_stats.retraces);
     SDL_RenderDebugText(app->renderer, 8, 32, line);
     SDL_snprintf(line, sizeof line, "tarefas RSP: gfx %llu audio %llu",
@@ -79,11 +130,23 @@ int main(int argc, char **argv) {
         fail(SDL_GetError());
         return 1;
     }
-    SDL_SetRenderLogicalPresentation(app.renderer, 320, 240, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    SDL_SetRenderLogicalPresentation(app.renderer, FB_W, FB_H, SDL_LOGICAL_PRESENTATION_LETTERBOX);
+    app.screen = SDL_CreateTexture(app.renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, FB_W, FB_H);
+    SDL_SetTextureScaleMode(app.screen, SDL_SCALEMODE_NEAREST);
+    const char *shots = SDL_getenv("MK64_SHOTS");
+    app.shots = shots ? SDL_atoi(shots) : 0;
+    app.shots_to = (uint64_t)-1;
+    if (shots && SDL_strchr(shots, ':')) {
+        const char *from = SDL_strchr(shots, ':') + 1;
+        app.shots_from = (uint64_t)SDL_atoi(from);
+        if (SDL_strchr(from, ':')) app.shots_to = (uint64_t)SDL_atoi(SDL_strchr(from, ':') + 1);
+    }
     input_init();
 
-    uint8_t *rdram = calloc(RDRAM_SIZE, 1);
-    UltraHost host = {on_retrace, NULL, &app};
-    ultra_run(rdram, app.rom.data, app.rom.size, &host);  // never returns
+    app.rdram = calloc(RDRAM_SIZE, 1);
+    rdp_reset(app.rdram);
+    rsp_reset();
+    UltraHost host = {on_retrace, on_task, &app};
+    ultra_run(app.rdram, app.rom.data, app.rom.size, &host);  // never returns
     return 0;
 }
