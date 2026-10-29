@@ -1,0 +1,119 @@
+EEPROM: 512 bytes from C:\Users\nicko\Desktop\projects\mk64-port\build\mk64.eep
+boot: entry 0x80000400
+osInitialize
+osCreateThread id=1 entry=0x800004e0 pri=100 sp=0x80154670
+osStartThread id=1
+osCreateViManager pri=254
+osViSetMode 0x800ea6c0 (type 2)
+osCreatePiManager pri=150
+osCreateThread id=9 entry=0x80004530 pri=127 sp=0x80162d40
+osStartThread id=9
+osCreateThread id=3 entry=0x800023e4 pri=100 sp=0x80156820
+osStartThread id=3
+osViSetEvent queue=0x8014efb8 msg=0x00000066 every 1
+osCreateThread id=4 entry=0x800028e4 pri=20 sp=0x8015cd30
+osStartThread id=4
+osCreateThread id=5 entry=0x8000277c pri=10 sp=0x8015ab80
+osStartThread id=5
+osAiSetFrequency 26800 -> 26807 Hz
+osContInit pattern=0x1
+RSP task #1 type=1 ucode=0x800d9040 data=0x80117920 size=0x218
+RSP task #2 type=1 ucode=0x800d9040 data=0x80140490 size=0x48
+RSP task #3 type=2 ucode=0x800db830 data=0x803bfa30 size=0x110
+RSP task #4 type=2 ucode=0x800db830 data=0x803bbd30 size=0x110
+RSP task #5 type=1 ucode=0x800d9040 data=0x80117920 size=0x350
+RSP task #6 type=2 ucode=0x800db830 data=0x803bfa30 size=0x110
+RSP task #7 type=2 ucode=0x800db830 data=0x803bbd30 size=0x110
+RSP task #8 type=2 ucode=0x800db830 data=0x803bfa30 size=0x110
+RSP task #9 type=2 ucode=0x800db830 data=0x803bbd30 size=0x130
+RSP task #10 type=2 ucode=0x800db830 data=0x803bfa30 size=0x110
+RSP task #11 type=2 ucode=0x800db830 data=0x803bbd30 size=0x110
+RSP task #12 type=2 ucode=0x800db830 data=0x803bfa30 size=0x110
+osAiSetFrequency 26800 -> 26807 Hz
+retrace 300: 27.0 quadros/s
+osAiSetFrequency 26800 -> 26807 Hz
+RSP task #600 type=2 ucode=0x800db830 data=0x803bbd30 size=0x11c8
+retrace 600: 26.4 quadros/s
+audio: fila 696 bytes (6 ms)
+RSP task #1200 type=2 ucode=0x800db830 data=0x803bbd30 size=0xc08
+retrace 900: 30.0 quadros/s
+retrace 1200: 30.0 quadros/s
+audio: fila 680 bytes (6 ms)
+RSP task #1800 type=2 ucode=0x800db830 data=0x803bbd30 size=0xb78
+retrace 1500: 29.8 quadros/s
+RSP task #2400 type=2 ucode=0x800db830 data=0x803bbd30 size=0xdd8
+osAiSetFrequency 26800 -> 26807 Hz
+retrace 1800: 27.2 quadros/s
+audio: fila 28 bytes (0 ms)
+RSP task #3000 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xd98
+retrace 2100: 29.8 quadros/s
+retrace 2400: 29.0 quadros/s
+audio: fila 812 bytes (8 ms)
+RSP task #3600 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xd08
+retrace 2700: 29.0 quadros/s
+RSP task #4200 type=2 ucode=0x800db830 data=0x803bb0b0 size=0x868
+retrace 3000: 30.0 quadros/s
+audio: fila 636 bytes (6 ms)
+RSP task #4800 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xb98
+retrace 3300: 30.0 quadros/s
+retrace 3600: 30.0 quadros/s
+audio: fila 632 bytes (6 ms)
+RSP task #5400 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xba8
+retrace 3900: 30.0 quadros/s
+RSP task #6000 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xad0
+retrace 4200: 30.0 quadros/s
+audio: fila 632 bytes (6 ms)
+RSP task #6600 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xf80
+retrace 4500: 30.0 quadros/s
+retrace 4800: 28.2 quadros/s
+audio: fila 28 bytes (0 ms)
+RSP task #7200 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xff8
+retrace 5100: 29.6 quadros/s
+RSP task #7800 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xed0
+retrace 5400: 30.0 quadros/s
+audio: fila 1832 bytes (17 ms)
+RSP task #8400 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xe48
+retrace 5700: 30.0 quadros/s
+retrace 6000: 30.0 quadros/s
+audio: fila 1756 bytes (16 ms)
+RSP task #9000 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xb80
+retrace 6300: 30.0 quadros/s
+RSP task #9600 type=1 ucode=0x800d9040 data=0x80117920 size=0x2520
+retrace 6600: 28.6 quadros/s
+audio: fila 632 bytes (6 ms)
+retrace 6900: 29.8 quadros/s
+RSP task #10200 type=1 ucode=0x800d9040 data=0x80117920 size=0x2898
+retrace 7200: 29.6 quadros/s
+audio: fila 328 bytes (3 ms)
+RSP task #10800 type=2 ucode=0x800db830 data=0x803bdeb0 size=0xd78
+retrace 7500: 29.0 quadros/s
+RSP task #11400 type=2 ucode=0x800db830 data=0x803bdeb0 size=0xcf8
+retrace 7800: 30.0 quadros/s
+audio: fila 632 bytes (6 ms)
+retrace 8100: 30.0 quadros/s
+RSP task #12000 type=2 ucode=0x800db830 data=0x803bdeb0 size=0xc58
+retrace 8400: 27.8 quadros/s
+audio: fila 2376 bytes (22 ms)
+RSP task #12600 type=2 ucode=0x800db830 data=0x803bdeb0 size=0xf28
+retrace 8700: 30.0 quadros/s
+RSP task #13200 type=2 ucode=0x800db830 data=0x803bdeb0 size=0xf08
+retrace 9000: 30.0 quadros/s
+audio: fila 2120 bytes (20 ms)
+retrace 9300: 30.0 quadros/s
+RSP task #13800 type=2 ucode=0x800db830 data=0x803bdeb0 size=0xbf8
+retrace 9600: 29.2 quadros/s
+audio: fila 700 bytes (7 ms)
+RSP task #14400 type=2 ucode=0x800db830 data=0x803bdeb0 size=0xd10
+retrace 9900: 29.4 quadros/s
+RSP task #15000 type=2 ucode=0x800db830 data=0x803bdeb0 size=0xc80
+retrace 10200: 27.8 quadros/s
+audio: fila 2124 bytes (20 ms)
+retrace 10500: 29.0 quadros/s
+RSP task #15600 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xbf0
+retrace 10800: 29.8 quadros/s
+audio: fila 632 bytes (6 ms)
+RSP task #16200 type=2 ucode=0x800db830 data=0x803bb0b0 size=0xd10
+retrace 11100: 29.0 quadros/s
+retrace 11400: 30.0 quadros/s
+audio: fila 1756 bytes (16 ms)
+RSP task #16800 type=2 ucode=0x800db830 data=0x803bb0b0 size=0x5d0

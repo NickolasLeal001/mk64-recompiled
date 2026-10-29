@@ -146,11 +146,8 @@ static void load_vertices(uint32_t addr, int first, int n) {
             v->r = c0 / 255.0f; v->g = c1 / 255.0f; v->b = c2 / 255.0f;
         }
         v->a = c3 / 255.0f;
-        if (S.geometry & G_FOG) {
-            float w = v->cw != 0 ? v->cw : 1e-5f;
-            float f = (v->cz / w) * S.fog_mul + S.fog_off;
-            v->a = clamp01(f / 255.0f);
-        }
+        // With G_FOG the shade alpha becomes the fog factor; it is computed per drawn vertex after
+        // near-plane clipping (draw_triangle), since z/w of vertices behind the eye is meaningless.
         // Vertex s/t are S10.5; G_TEXTURE scale is 0.16.
         if (!((S.geometry & G_LIGHTING) && (S.geometry & G_TEXTURE_GEN))) {
             v->s = s * S.tex_sscale / 32.0f;
@@ -199,6 +196,7 @@ static void draw_triangle(int i0, int i1, int i2) {
     RdpVertex sv[8];
     for (int k = 0; k < n; k++) {
         if (poly[k].cw <= 1e-5f) poly[k].cw = 1e-5f;
+        if (S.geometry & G_FOG) poly[k].a = clamp01(((poly[k].cz / poly[k].cw) * S.fog_mul + S.fog_off) / 255.0f);
         to_screen(&poly[k], &sv[k]);
     }
     // Back/front face culling on the projected polygon (N64 screen y grows downward).

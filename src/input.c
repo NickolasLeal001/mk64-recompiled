@@ -19,6 +19,7 @@ static SDL_Gamepad *g_pad;
 void input_init(void) {
     SDL_InitSubSystem(SDL_INIT_GAMEPAD);
     ultra_pads[0].connected = 1;  // the keyboard always counts as controller 1
+    if (SDL_getenv("MK64_INPUT2")) ultra_pads[1].connected = 1;  // before osContInit asks
 }
 
 static void open_first_gamepad(void) {
@@ -36,8 +37,8 @@ static int8_t axis_to_stick(Sint16 v) {
 
 // MK64_INPUT="700-706:START;800-804:A;1200-1300:A+UP": buttons held during retrace ranges, on top
 // of the keyboard and gamepad (used for automated runs and replays).
-static uint16_t scripted_buttons(int *x, int *y) {
-    const char *spec = SDL_getenv("MK64_INPUT");
+static uint16_t scripted_buttons(const char *var, int *x, int *y) {
+    const char *spec = SDL_getenv(var);
     if (!spec) return 0;
     uint64_t now = ultra_stats.retraces;
     uint16_t b = 0;
@@ -117,8 +118,16 @@ void input_update(void) {
         if (gx) x = gx;
         if (gy) y = gy;
     }
-    b |= scripted_buttons(&x, &y);
+    b |= scripted_buttons("MK64_INPUT", &x, &y);
     ultra_pads[0].buttons = b;
     ultra_pads[0].stick_x = (int8_t)x;
     ultra_pads[0].stick_y = (int8_t)y;
+    // MK64_INPUT2: a scripted controller 2 (for VS/Battle replays).
+    if (SDL_getenv("MK64_INPUT2")) {
+        int x2 = 0, y2 = 0;
+        ultra_pads[1].connected = 1;
+        ultra_pads[1].buttons = scripted_buttons("MK64_INPUT2", &x2, &y2);
+        ultra_pads[1].stick_x = (int8_t)x2;
+        ultra_pads[1].stick_y = (int8_t)y2;
+    }
 }

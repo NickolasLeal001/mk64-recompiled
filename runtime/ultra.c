@@ -208,6 +208,11 @@ static uint8_t g_eeprom[512];
 static char g_eeprom_path[1024];
 
 static void eeprom_load(void) {
+    if (ultra_deterministic) {
+        // Replays start from a blank EEPROM and keep their save in the working directory.
+        strcpy(g_eeprom_path, "mk64.eep");
+        return;
+    }
     DWORD n = GetModuleFileNameA(NULL, g_eeprom_path, sizeof g_eeprom_path);
     char *slash = n ? strrchr(g_eeprom_path, '\\') : NULL;
     if (slash) slash[1] = '\0';

@@ -383,8 +383,17 @@ Fase 0: criar o esqueleto CMake e o verificador de SHA-1. Fase 1, item 1: listar
 
 ## Fase 7 — andamento (2026-10-28)
 
-> - Modo determinístico e sem janela: `MK64_HEADLESS=1` (tempo virtual, retrace quando nenhuma thread pode rodar) + `MK64_EXIT_AT=n`. Com `MK64_SHOTS` grava `replay_hashes.txt`.
-> - Duas execuções do roteiro título → menus → Luigi Raceway (2.600 retraces, ~32 s) deram hashes idênticos nos 8 quadros. Referência em `tests/replays/luigi_raceway_inicio.txt`.
-> - **Falta:**
->   - executor automático que compare com a referência;
->   - roteiros para todas as pistas, Time Trials, VS (2º controle roteirizado), Battle, pódio e EEPROM.
+> - **Modo de teste:** `MK64_HEADLESS=1` (tempo virtual, sem janela/áudio, EEPROM em branco na pasta da execução) + `MK64_EXIT_AT`. `MK64_INPUT2` é um 2º controle roteirizado.
+> - `tools/replay.py`: roda e compara hashes de quadros. `--record` grava a referência; os BMPs ficam em `build/replays/<nome>/`. `tools/explore.ps1` monta folhas de contato para explorar menus.
+> - **20 replays em `tests/replays/`, todos passando duas vezes seguidas (~7,5 min):**
+>   - título → menus → largada no Luigi Raceway;
+>   - Time Trials com aviso de Controller Pak e recordes da EEPROM;
+>   - largada em **cada uma das 16 pistas**;
+>   - **VS 2 jogadores** em tela dividida;
+>   - **Battle 2 jogadores** na Big Donut.
+> - **EEPROM:** no primeiro boot o jogo grava os recordes padrão (512 bytes com checksum) em `mk64.eep`.
+> - **Correção:** neblina calculada depois do recorte no near plane (vértices atrás da câmera davam z/w sem sentido).
+> - **Aberto:**
+>   - Choco Mountain aparece com muita neblina branca. A fórmula segue a referência; falta comparar com o original (fase 8).
+>   - Pódio e gravação de um recorde novo: exigem completar corridas, ou seja, pilotar 3 voltas por roteiro ou com piloto automático.
+>   - VS/Battle com 3–4 jogadores: roteiros dos controles 3 e 4.
