@@ -13,7 +13,6 @@ __pycache__/
 *.pyc
 
 # Screenshots of the game contain its art: keep them local
-
 shots/
 build_prof/
 mk64_runtime.log
