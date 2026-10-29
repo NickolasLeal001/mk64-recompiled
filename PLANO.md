@@ -327,7 +327,9 @@ Cada marco vira um teste de replay: uma sequência de entradas gravada é rodada
 
 ---
 
-## Fase 8 — Validação comportamental com o REA (contínua)
+## Fase 8 — Validação comportamental com o REA (contínua) — 🔶 em andamento
+
+> `tests/behavior_test.c` chama as funções **recompiladas** com a RAM carregada da ROM e confere 6 achados do `NOTAS.md`: zona morta ±12 nos dois eixos, limite ±53, 40 → 28, C-baixo liga Z, e a tabela de aceleração por classe de peso. **Todos passam.**
 
 Os achados da análise viram testes automáticos contra o port:
 
@@ -393,7 +395,9 @@ Fase 0: criar o esqueleto CMake e o verificador de SHA-1. Fase 1, item 1: listar
 >   - **Battle 2 jogadores** na Big Donut.
 > - **EEPROM:** no primeiro boot o jogo grava os recordes padrão (512 bytes com checksum) em `mk64.eep`.
 > - **Correção:** neblina calculada depois do recorte no near plane (vértices atrás da câmera davam z/w sem sentido).
+> - **Piloto automático para testes:** `MK64_AUTOPILOT=n` dá ao jogador 1 as flags de kart da IA (`0x9010` em vez de `0xc010`, achadas num dump da RAM com `MK64_DUMPRAM`). A IA do próprio jogo pilota o Mario: ele completou as 3 voltas do Luigi Raceway (7º lugar). Ao terminar, o jogador volta a ser humano (bit `0x0800` = corrida terminada).
 > - **Aberto:**
+>   - Tela de resultado: depois da corrida, A e START não avançam. START abre o menu de pausa ("CONTINUE GAME/QUIT"). Todos os karts têm `0x0800`. Falta achar a condição que o jogo espera; até lá, pódio e copa completa ficam sem teste.
 >   - Choco Mountain aparece com muita neblina branca. A fórmula segue a referência; falta comparar com o original (fase 8).
 >   - Pódio e gravação de um recorde novo: exigem completar corridas, ou seja, pilotar 3 voltas por roteiro ou com piloto automático.
 >   - VS/Battle com 3–4 jogadores: roteiros dos controles 3 e 4.

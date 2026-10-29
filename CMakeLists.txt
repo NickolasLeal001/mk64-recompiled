@@ -43,6 +43,9 @@ if(RECOMP_GENERATED)
 
   add_executable(recomp_link_check tests/recomp_link_check.c runtime/recomp_stubs.c)
   target_link_libraries(recomp_link_check PRIVATE recomp_game)
+  add_executable(behavior_test tests/behavior_test.c)
+  target_link_libraries(behavior_test PRIVATE recomp_game rom)
+
   add_executable(recomp_diff tests/recomp_diff.c tests/interp.c)
   target_link_libraries(recomp_diff PRIVATE recomp_game rom)
   if(MSVC)

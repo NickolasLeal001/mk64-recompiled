@@ -158,6 +158,40 @@ static int on_retrace(void *user) {
             if (f) { fprintf(f, "%llu %016llx\n", (unsigned long long)n, (unsigned long long)h); fclose(f); }
         }
     }
+    // MK64_AUTOPILOT=n: from retrace n on, player 1 (0x800F6990) carries the computer-driver flag
+    // (0x1000) instead of the human one (0x4000), so the game's own AI drives it. For automated
+    // tests that need to finish races.
+    // Once the race is over (0x0800 on every kart) player 1 goes back to human, or the result
+    // screens would wait forever for a human player.
+    const char *autopilot = SDL_getenv("MK64_AUTOPILOT");
+    if (autopilot && n >= (uint64_t)SDL_atoi(autopilot)) {
+        static int driving;
+        uint16_t flags = mem_r16(app->rdram, 0x800F6990u);
+        if ((flags & 0x8000) && (flags & 0x4000) && !(flags & 0x0800)) {
+            mem_w16(app->rdram, 0x800F6990u, (uint16_t)((flags & ~0x4000) | 0x1000));
+            driving = 1;
+        } else if (driving && (flags & 0x0800)) {
+            mem_w16(app->rdram, 0x800F6990u, (uint16_t)((flags & ~0x1000) | 0x4000));
+            driving = 0;
+        }
+        // Race over: open the post-race menu with START, then take its first option with A.
+        if ((flags & 0x0800) && !SDL_getenv("MK64_AUTOPILOT_MANUAL")) {
+            uint64_t phase = n % 120;
+            if (phase < 4) ultra_pads[0].buttons |= 0x1000;              // START
+            else if (phase >= 60 && phase < 64) ultra_pads[0].buttons |= 0x8000;  // A
+        }
+    }
+    // MK64_DUMPRAM=n: write RDRAM in N64 byte order to ram_<n>.bin (debugging and analysis).
+    const char *dump = SDL_getenv("MK64_DUMPRAM");
+    if (dump && n == (uint64_t)SDL_atoi(dump)) {
+        char name[64];
+        SDL_snprintf(name, sizeof name, "ram_%llu.bin", (unsigned long long)n);
+        FILE *f = fopen(name, "wb");
+        if (f) {
+            for (uint32_t a = 0; a < RDRAM_SIZE; a++) fputc(mem_r8(app->rdram, 0x80000000u + a), f);
+            fclose(f);
+        }
+    }
     if (app->exit_at && n >= app->exit_at) return 0;
     if (!app->renderer) return 1;  // headless
     SDL_SetRenderDrawColor(app->renderer, 0, 0, 0, 255);

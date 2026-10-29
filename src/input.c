@@ -19,7 +19,10 @@ static SDL_Gamepad *g_pad;
 void input_init(void) {
     SDL_InitSubSystem(SDL_INIT_GAMEPAD);
     ultra_pads[0].connected = 1;  // the keyboard always counts as controller 1
-    if (SDL_getenv("MK64_INPUT2")) ultra_pads[1].connected = 1;  // before osContInit asks
+    // Scripted controllers must be connected before osContInit asks.
+    if (SDL_getenv("MK64_INPUT2")) ultra_pads[1].connected = 1;
+    if (SDL_getenv("MK64_INPUT3")) ultra_pads[2].connected = 1;
+    if (SDL_getenv("MK64_INPUT4")) ultra_pads[3].connected = 1;
 }
 
 static void open_first_gamepad(void) {
@@ -122,12 +125,14 @@ void input_update(void) {
     ultra_pads[0].buttons = b;
     ultra_pads[0].stick_x = (int8_t)x;
     ultra_pads[0].stick_y = (int8_t)y;
-    // MK64_INPUT2: a scripted controller 2 (for VS/Battle replays).
-    if (SDL_getenv("MK64_INPUT2")) {
-        int x2 = 0, y2 = 0;
-        ultra_pads[1].connected = 1;
-        ultra_pads[1].buttons = scripted_buttons("MK64_INPUT2", &x2, &y2);
-        ultra_pads[1].stick_x = (int8_t)x2;
-        ultra_pads[1].stick_y = (int8_t)y2;
+    // MK64_INPUT2..4: scripted controllers 2-4 (for VS/Battle replays).
+    static const char *vars[4] = {NULL, "MK64_INPUT2", "MK64_INPUT3", "MK64_INPUT4"};
+    for (int p = 1; p < 4; p++) {
+        if (!SDL_getenv(vars[p])) continue;
+        int px = 0, py = 0;
+        ultra_pads[p].connected = 1;
+        ultra_pads[p].buttons = scripted_buttons(vars[p], &px, &py);
+        ultra_pads[p].stick_x = (int8_t)px;
+        ultra_pads[p].stick_y = (int8_t)py;
     }
 }

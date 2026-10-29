@@ -26,8 +26,11 @@ def run(rom, spec, name):
     os.makedirs(work)
     env = dict(os.environ, MK64_HEADLESS="1", MK64_INPUT=spec["input"], MK64_EXIT_AT=str(spec["exit_at"]),
                MK64_SHOTS=str(spec["shots"]))
-    if spec.get("input2"):
-        env["MK64_INPUT2"] = spec["input2"]
+    for k in (2, 3, 4):
+        if spec.get(f"input{k}"):
+            env[f"MK64_INPUT{k}"] = spec[f"input{k}"]
+    if spec.get("autopilot"):
+        env["MK64_AUTOPILOT"] = str(spec["autopilot"])
     subprocess.run([EXE, rom], cwd=work, env=env, stdout=subprocess.DEVNULL, check=False, timeout=1800)
     hashes = {}
     path = os.path.join(work, "replay_hashes.txt")
