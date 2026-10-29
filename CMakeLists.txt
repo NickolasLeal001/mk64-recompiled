@@ -27,7 +27,8 @@ target_include_directories(rom PUBLIC src)
 # and is never committed.
 file(GLOB RECOMP_GENERATED CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/generated/*.c)
 if(RECOMP_GENERATED)
-  add_library(recomp_game STATIC ${RECOMP_GENERATED} runtime/recomp_ops.c runtime/recomp_lookup.c)
+  file(GLOB NATIVE_REWRITES CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/native/*.c)
+  add_library(recomp_game STATIC ${RECOMP_GENERATED} ${NATIVE_REWRITES} runtime/recomp_ops.c runtime/recomp_lookup.c)
   target_include_directories(recomp_game PUBLIC runtime generated)
   if(MSVC)
     # Generated code: unreferenced labels (C4102) and constant conditions are expected.

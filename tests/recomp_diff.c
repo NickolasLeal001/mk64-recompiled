@@ -80,16 +80,32 @@ static void random_state(Ctx *c, uint8_t *rdram) {
     }
 }
 
+#include "rewritten_list.c.inc"
+
+static int is_rewritten(uint32_t addr) {
+    for (size_t k = 0; k < sizeof rewritten_addrs / sizeof rewritten_addrs[0]; k++)
+        if (rewritten_addrs[k] == addr) return 1;
+    return 0;
+}
+
+// o32 ABI-visible state: result v0 (the rewrites return at most 32 bits, so v1 is scratch), f0/f2,
+// callee-saved s0-s7/fp, f20-f31, sp and ra.
+static int abi_reg(int r) { return r == 2 || (r >= 16 && r <= 23) || r == 29 || r == 30 || r == 31; }
+static int abi_freg(int f) { return f <= 3 || f >= 20; }
+static int g_abi_only;
+
 static int compare(const Ctx *a, const Ctx *b, const uint8_t *ma, const uint8_t *mb, char *why, size_t n) {
     for (int r = 1; r < 32; r++) {
         if (r == 26 || r == 27) continue;
+        if (g_abi_only && !abi_reg(r)) continue;
         if (a->r[r] != b->r[r]) {
             snprintf(why, n, "r%d interp=%016llx recomp=%016llx", r, (unsigned long long)a->r[r], (unsigned long long)b->r[r]);
             return 0;
         }
     }
-    if (a->hi != b->hi || a->lo != b->lo) { snprintf(why, n, "hi/lo"); return 0; }
+    if (!g_abi_only && (a->hi != b->hi || a->lo != b->lo)) { snprintf(why, n, "hi/lo"); return 0; }
     for (int f = 0; f < 32; f++) {
+        if (g_abi_only && !abi_freg(f)) continue;
         if (a->f[f] != b->f[f]) {
             snprintf(why, n, "f%d interp=%08x recomp=%08x", f, a->f[f], b->f[f]);
             return 0;
@@ -145,6 +161,7 @@ int main(int argc, char **argv) {
         if (addr < first || (only && addr != first) || (addr >= LIBULTRA_START && addr < LIBULTRA_END)) continue;
         int any = 0, bad = 0;
         char why[160] = "";
+        g_abi_only = is_rewritten(addr);  // hand-written C: only the ABI contract must match
         for (int t = 0; t < trials && !bad; t++) {
             Ctx c0, ca, cb;
             memcpy(ma, base, RDRAM_SIZE);
