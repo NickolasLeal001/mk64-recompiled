@@ -430,6 +430,15 @@ Para cada sistema já entendido (controle → esterço → aceleração → drif
 >       - Pendências conhecidas: o alfa da memória (G_BL_A_MEM) é aproximado por 1 (registrado no log se aparecer); z de decal com Z_UPD é gravado 0,002 abaixo; o texto do F1 vai para a barra de título no modo GPU.
 > - **Conferido (2026-10-29):** a tela larga não mostra objetos surgindo tarde nas laterais. Foram 34 quadros em 16:9, ao longo de uma volta do Luigi Raceway e do começo do Koopa Troopa Beach e do Bowser's Castle, com pista e cenário completos até as bordas. O teste de visão dos karts (`FUN_8001fb0c`) usa meio-ângulo de ±58° com 1 jogador, mais largo que a imagem 16:9.
 > - **Contador de fps (2026-10-29):** `mostrar_fps = 1` no `mk64.ini` (padrão ligado; F2 alterna) mostra no canto superior esquerdo da imagem quantas imagens novas apareceram por segundo, contando as intermediárias, com atualização a cada meio segundo. O texto é desenhado por uma fonte própria de 3×5 pixels, em amarelo sobre preto, a 2 pixels lógicos por pixel. Ele sai igual nos dois renderizadores: no `SDL_Renderer` vira uma textura, e na GPU é um segundo blit na swapchain. Fica só na apresentação, então os replays não mudam.
+> - **Fluxo de compilação a partir da ROM (2026-10-29):** `compilar.bat <rom> [--saida PASTA] [--sem-rom] [--sem-teste]` (lógica em `tools/compilar.py`) faz tudo do zero em 5 passos:
+>   1. confere a ROM: formato .z64/.v64/.n64, convertida para .z64 em `build/rom.z64` quando preciso, e SHA-1 da versão USA;
+>   2. recompila para C (`analyze.py` + `recomp.py`) numa pasta nova, que substitui `generated/` inteira;
+>   3. chama o `build.bat`, que agora acha o Visual Studio pelo `vswhere` quando ele não está no caminho fixo;
+>   4. copia `mk64.exe` e a ROM como `rom.z64` para `dist/`, que fica fora do git;
+>   5. roda 300 retraces sem janela.
+>
+>   Leva ~50 s com o SDL já baixado. Avisa quando o executável sai sem `glslc`, ou seja, só com o renderizador cpu.
+>   - Pendência antiga: o prefixo das linhas do `/showIncludes` está em UTF-8 no `rules.ninja`, mas o `cl` o imprime na página de código do console. Por isso o ninja não registra as dependências de cabeçalho: mudar um `.h` não recompila quem o inclui. O fluxo só esconde essas linhas da saída.
 > - **Falta:** na interpolação, partículas que nascem ou somem no quadro não são interpoladas.
 
 - Remapeamento de controle e suporte a teclado.
