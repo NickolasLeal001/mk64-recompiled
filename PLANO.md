@@ -335,6 +335,16 @@ Cada marco vira um teste de replay: uma sequência de entradas gravada é rodada
 ## Fase 8 — Validação comportamental com o REA (contínua) — 🔶 em andamento
 
 > `tests/behavior_test.c` chama as funções **recompiladas** com a RAM carregada da ROM e confere 6 achados do `NOTAS.md`: zona morta ±12 nos dois eixos, limite ±53, 40 → 28, C-baixo liga Z, e a tabela de aceleração por classe de peso. **Todos passam.**
+>
+> - **Drift (2026-10-29):** replay `drift_luigi` com verificações de RAM no jogador 1 (`ram_checks` no `tools/replay.py`, sobre dumps em retraces escolhidos).
+>   - R + direção em velocidade liga a flag 0x10 em +0xBC.
+>   - Com o direcional cheio, o esterço em +0x7C fica entre +40 e +53.
+>   - O contra-esterço liga a carga do mini-turbo (0x20000000) só além de 39: a −37 continua desligada, a −41 já ligou.
+>   - Correção do `NOTAS.md`: +0x7C segue o direcional cru e vai até −49 no contra-esterço. O remapeamento para 40..53 não fica nesse campo.
+> - **Física simplificada fora da tela:** medida com o perfil de chamadas (`-DMK64_PROFILE=ON`).
+>   - Grand Prix de 1 jogador, 300 quadros: `FUN_80028864` roda 16 vezes por quadro (8 karts × 2). Desse total, 2.667 chamadas vão para a física simplificada `FUN_8002f35c` (55%), 1.813 para a normal `FUN_8002d268` e 320 para a "com efeito" `FUN_8002e594`.
+>   - Time Trials e VS de 4 jogadores: sem karts da CPU, a simplificada não roda nenhuma vez, e a atualização usa outra rotina.
+> - **Falta:** comparar com um emulador de referência, o que depende de baixar um emulador. Isso inclui as capturas da fase 5, a neblina do Choco Mountain e o tempo de 0 à velocidade máxima por personagem.
 
 Os achados da análise viram testes automáticos contra o port:
 

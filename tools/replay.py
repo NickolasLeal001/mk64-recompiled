@@ -14,6 +14,7 @@ import hashlib
 import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 
@@ -34,6 +35,9 @@ def run(rom, spec, name):
     if spec.get("autopilot"):
         env["MK64_AUTOPILOT"] = str(spec["autopilot"])
     env.update({k: str(v) for k, v in spec.get("env", {}).items()})
+    checks = spec.get("ram_checks", [])
+    if checks:
+        env["MK64_DUMPRAM"] = ",".join(sorted({str(c["retrace"]) for c in checks}))
     subprocess.run([EXE, rom], cwd=work, env=env, stdout=subprocess.DEVNULL, check=False, timeout=1800)
     hashes = {}
     path = os.path.join(work, "replay_hashes.txt")
@@ -45,7 +49,32 @@ def run(rom, spec, name):
     eep = os.path.join(work, "mk64.eep")
     if spec.get("check_eeprom") and os.path.exists(eep):
         hashes["eeprom"] = hashlib.sha1(open(eep, "rb").read()).hexdigest()
-    return hashes
+    return hashes, [c["descricao"] for c in checks if not ram_check(work, c)]
+
+
+# ram_checks: [{"retrace", "addr", "type" (u32, s32, s16, f32, fix16), "min", "max", "bits_set",
+# "bits_clear", "descricao"}], evaluated on the RDRAM dumped at that retrace (N64 byte order).
+def ram_check(work, c):
+    path = os.path.join(work, f"ram_{c['retrace']}.bin")
+    if not os.path.exists(path):
+        return False
+    data = open(path, "rb").read()
+    off = int(c["addr"], 16) & 0x00FFFFFF
+    kind = c.get("type", "u32")
+    fmt = {"u32": ">I", "s32": ">i", "s16": ">h", "f32": ">f", "fix16": ">i"}[kind]
+    v = struct.unpack_from(fmt, data, off)[0]
+    if kind == "fix16":
+        v /= 65536.0
+    ok = True
+    if "min" in c:
+        ok &= v >= c["min"]
+    if "max" in c:
+        ok &= v <= c["max"]
+    if "bits_set" in c:
+        ok &= (v & int(c["bits_set"], 16)) == int(c["bits_set"], 16)
+    if "bits_clear" in c:
+        ok &= (v & int(c["bits_clear"], 16)) == 0
+    return ok
 
 
 def main():
@@ -57,7 +86,10 @@ def main():
     for name in names:
         path = os.path.join(DIR, name + ".json")
         spec = json.load(open(path, encoding="utf-8"))
-        got = run(rom, spec, name)
+        got, failed_checks = run(rom, spec, name)
+        for what in failed_checks:
+            print(f"{name}: verificacao de RAM falhou: {what}")
+        failed += bool(failed_checks)
         if record:
             spec["expected"] = got
             json.dump(spec, open(path, "w", encoding="utf-8"), indent=1)
