@@ -4,6 +4,7 @@
 // Simplifications kept on purpose: no coverage/anti-aliasing (alpha-to-coverage modes use an alpha
 // threshold), no dithering, bilinear instead of 3-point filtering, a float Z buffer per Z image.
 #include "rdp.h"
+#include "rdp_internal.h"
 
 #include <math.h>
 #include <process.h>
@@ -17,33 +18,6 @@
 
 static uint8_t *g_ram;
 #define RAM(a) (0x80000000u | ((a) & 0x00FFFFFFu))
-
-// Image formats (G_IM_FMT_*) and sizes (G_IM_SIZ_*)
-enum { FMT_RGBA, FMT_YUV, FMT_CI, FMT_IA, FMT_I };
-enum { SIZ_4, SIZ_8, SIZ_16, SIZ_32 };
-
-typedef struct Tile {
-    int fmt, siz, line, tmem, palette;
-    int cms, cmt, masks, maskt, shifts, shiftt;
-    float uls, ult, lrs, lrt;  // texels
-} Tile;
-
-typedef struct Color { float r, g, b, a; } Color;
-
-typedef struct RdpState {
-    uint32_t om_hi, om_lo;
-    uint32_t cimg, cimg_width, cimg_siz, zimg, timg, timg_width, timg_siz, timg_fmt;
-    Tile tiles[8];
-    uint8_t tmem[4096];
-    uint32_t combine_hi, combine_lo;
-    Color prim, env, blend, fog;
-    float prim_lod;
-    uint32_t fill;
-    float prim_depth;
-    int sc_x0, sc_y0, sc_x1, sc_y1;  // scissor, pixels, exclusive end
-    int tile;                        // tile sampled: G_TEXTURE tile or the texrect's own
-    int need_tex0, need_tex1, need_mem;  // work the combiner/blender actually need
-} RdpState;
 
 // The command stream updates REC. Primitives are recorded with a snapshot of it and drawn later,
 // in parallel bands; the pixel code reads the snapshot of the primitive it draws through R.
@@ -63,15 +37,6 @@ static ZBuf g_zbuf, g_zhi;
 // in between are found and copied (enlarged) into the private image.
 // A wider aspect ratio widens the private images of 320-pixel color images by `ox` pixels on each
 // side (240 lines high); full-width scissors and rectangles reach the new edges.
-typedef struct HiTarget {
-    uint32_t addr;
-    int w, ox, stride;  // 1x width; side margin and row length in enlarged pixels
-    uint16_t *color, *shadow;
-    uint16_t *icolor;   // frame interpolation: the in-between image (rdp_interp_begin/end)
-    uint64_t istamp;    // interpolated run that drew icolor
-    int pending;
-    uint64_t used;
-} HiTarget;
 #define HI_TARGETS 8
 static int g_scale = 1, g_hires;  // g_hires: the enlarged pass runs (scale > 1, wider or interpolated)
 static float g_aspect = 4.0f / 3.0f;  // of the display picture
@@ -94,7 +59,6 @@ static int hi_stride(int w) { return w * g_scale + 2 * hi_ox(w); }
 // ---------------------------------------------------------------------------------------------
 // Othermode fields
 #define CYCLE_TYPE() ((R.om_hi >> 20) & 3)
-enum { CYC_1, CYC_2, CYC_COPY, CYC_FILL };
 #define TEX_PERSP() ((R.om_hi >> 19) & 1)
 #define TEX_FILTER() ((R.om_hi >> 12) & 3)
 #define TLUT_TYPE() ((R.om_hi >> 14) & 3)  // 2 = RGBA16, 3 = IA16
@@ -513,19 +477,6 @@ static Color shade_pixel(Color shade, float s, float t) {
 
 // ---------------------------------------------------------------------------------------------
 // Recorded primitives. Each kernel draws only rows [by0, by1) of its primitive.
-enum { OP_TRI, OP_TEXRECT, OP_FILL, OP_RECT };
-
-typedef struct Op {
-    int kind;
-    const RdpState *st;
-    HiTarget *hi;  // private image of its color image (internal resolution > 1)
-    union {
-        RdpVertex v[3];
-        struct { float ulx, uly, lrx, lry, s0, t0, dsdx, dtdy; int flip; } tr;
-        struct { int x0, y0, x1, y1; } rc;
-    } u;
-} Op;
-
 // Scissor and primitive coordinates are in 1x pixels; kernels work in pixels of the pass:
 // x * g_s + g_ox. A span covering the whole 1x width covers the whole widened row.
 static void span_cols(int ux0, int ux1, int *x0, int *x1) {

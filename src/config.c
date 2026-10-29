@@ -27,8 +27,11 @@ static void write_default(const char *path) {
     fprintf(f, "# MK64 Port - configuracao (apague este arquivo para voltar ao padrao)\n\n");
     fprintf(f, "# Janela: escala inteira da imagem 320x240, tela cheia (F11 alterna) e filtro\n");
     fprintf(f, "escala = 3\ntela_cheia = 0\n# filtro: nitido ou suave\nfiltro = nitido\n\n");
-    fprintf(f, "# Resolucao interna: 1 = 320x240 original, 2 = 640x480, ate 4 (mais pesado)\n");
+    fprintf(f, "# Resolucao interna: 1 = 320x240 original, 2 = 640x480, ate 4 em cpu ou 8 em gpu\n");
     fprintf(f, "resolucao_interna = 2\n\n");
+    fprintf(f, "# Quem desenha a imagem da tela: gpu (Vulkan; resolucao interna ate 8) ou cpu (software).\n");
+    fprintf(f, "# Sem Vulkan, o jogo volta sozinho para cpu.\n");
+    fprintf(f, "renderizador = gpu\n\n");
     fprintf(f, "# Proporcao da imagem: 4:3 (original), 16:9, 16:10, 21:9, 32:9 ou outra no formato a:b.\n");
     fprintf(f, "# Mais larga mostra mais da pista nas laterais; o HUD fica no centro.\n");
     fprintf(f, "proporcao = 4:3\n\n");
@@ -63,6 +66,7 @@ void config_load(void) {
     config.internal = 2;
     config.aspect = 4.0f / 3.0f;
     config.interp = 1;
+    config.gpu = 1;
     for (int k = 0; k < CFG_KEY_COUNT; k++) config.keys[k] = SDL_GetScancodeFromName(KEYS[k].def);
 
     char path[1024];
@@ -83,9 +87,10 @@ void config_load(void) {
         if (!strcmp(key, "escala")) config.scale = SDL_clamp(SDL_atoi(val), 1, 8);
         else if (!strcmp(key, "tela_cheia")) config.fullscreen = SDL_atoi(val) != 0;
         else if (!strcmp(key, "filtro")) config.smooth = !strcmp(val, "suave");
-        else if (!strcmp(key, "resolucao_interna")) config.internal = SDL_clamp(SDL_atoi(val), 1, 4);
+        else if (!strcmp(key, "resolucao_interna")) config.internal = SDL_clamp(SDL_atoi(val), 1, 8);
         else if (!strcmp(key, "tela_larga")) config.aspect = SDL_atoi(val) ? 16.0f / 9.0f : 4.0f / 3.0f;  // older files
         else if (!strcmp(key, "proporcao")) config.aspect = config_parse_aspect(val, config.aspect);
+        else if (!strcmp(key, "renderizador")) config.gpu = strcmp(val, "cpu") != 0;
         else if (!strcmp(key, "interpolacao")) config.interp = SDL_atoi(val) != 0;
         else if (!strcmp(key, "volume")) config.volume = SDL_clamp(SDL_atoi(val), 0, 100);
         else if (!strncmp(key, "tecla_", 6)) {

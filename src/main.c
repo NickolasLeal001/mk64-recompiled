@@ -6,6 +6,7 @@
 
 #include "abi.h"
 #include "config.h"
+#include "gpu.h"
 #include "input.h"
 #include "rdp.h"
 #include "rom.h"
@@ -25,6 +26,8 @@ typedef struct App {
     SDL_Renderer *renderer;
     SDL_Texture *screen;
     SDL_Texture *screen_hi;  // internal resolution above 1x
+    int gpu;                 // SDL_gpu (Vulkan) presents the picture instead of the SDL_Renderer
+    SDL_GPUTexture *gpu_shown;  // what gpu_present shows
     uint32_t *hpixels;
     int showing_hi, hi_w, hi_h;
     int log_w;  // logical width: 320 at 4:3, wider for wider aspect ratios (240 lines high)
@@ -48,6 +51,7 @@ typedef struct App {
     double ai_end[2];    // when each buffer in the emulated AI DMA queue finishes (seconds)
     int ai_count;
     Rom rom;
+    char title[128];
 } App;
 
 static App *g_app;
@@ -234,7 +238,10 @@ static int on_retrace(void *user) {
     SDL_Event e;
     while (SDL_PollEvent(&e)) {
         if (e.type == SDL_EVENT_QUIT || (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_ESCAPE)) return 0;
-        if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F1) app->show_status = !app->show_status;
+        if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F1) {
+            app->show_status = !app->show_status;
+            if (!app->show_status && app->gpu && app->window) SDL_SetWindowTitle(app->window, app->title);
+        }
         if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F11 && app->window) {
             config.fullscreen = !config.fullscreen;
             SDL_SetWindowFullscreen(app->window, config.fullscreen);
@@ -274,6 +281,8 @@ static int on_retrace(void *user) {
         } else {
             app->showing_hi = app->hpixels && rdp_read_framebuffer_hires(fb, FB_W, FB_H, app->hpixels, &hw, &hh);
         }
+        if (app->gpu && app->window)
+            app->gpu_shown = app->showing_hi ? gpu_upload_image(1, app->hpixels, hw, hh) : gpu_upload_image(0, app->pixels, FB_W, FB_H);
         if (app->showing_hi && app->renderer) {
             if (!app->screen_hi || hw != app->hi_w || hh != app->hi_h) {
                 if (app->screen_hi) SDL_DestroyTexture(app->screen_hi);
@@ -358,6 +367,18 @@ static int on_retrace(void *user) {
         }
     }
     if (app->exit_at && n >= app->exit_at) return 0;
+    if (app->gpu && app->window) {
+        if (SDL_getenv("MK64_GPU_TEST")) gpu_present(gpu_test_target(640, 480), 640, 480, app->log_w, config.smooth);
+        else if (app->showing_hi) gpu_present(app->gpu_shown, app->hi_w, app->hi_h, app->log_w, config.smooth);
+        else gpu_present(app->gpu_shown, FB_W, FB_H, app->log_w, config.smooth);
+        if (app->show_status) {  // no text drawing on this path: the status goes to the title bar
+            char line[160];
+            SDL_snprintf(line, sizeof line, "MK64 Port - retraces %llu, triangulos %llu, framebuffer %08x",
+                         (unsigned long long)ultra_stats.retraces, (unsigned long long)rsp_stats_tris, ultra_stats.framebuffer);
+            SDL_SetWindowTitle(app->window, line);
+        }
+        return 1;
+    }
     if (!app->renderer) return 1;  // headless
     SDL_SetRenderDrawColor(app->renderer, 0, 0, 0, 255);
     SDL_RenderClear(app->renderer);
@@ -428,12 +449,26 @@ int main(int argc, char **argv) {
     if (aspect_env) aspect = config_parse_aspect(aspect_env, aspect);
     app.log_w = (int)(FB_H * aspect + 0.5f);
     if (app.log_w < FB_W + 2) app.log_w = FB_W;
+    // Renderer of the display picture: mk64.ini, or MK64_RENDERER (gpu / cpu). Headless runs
+    // default to cpu. Without a usable Vulkan device the software renderer takes over.
+    const char *renderer_env = SDL_getenv("MK64_RENDERER");
+    int want_gpu = renderer_env ? SDL_strcmp(renderer_env, "gpu") == 0 : !headless && config.gpu;
     if (!headless) {
-        char title[128];
-        SDL_snprintf(title, sizeof(title), "MK64 Port - %s (%s)", app.rom.title, app.rom.game_code);
+        SDL_snprintf(app.title, sizeof(app.title), "MK64 Port - %s (%s)", app.rom.title, app.rom.game_code);
         SDL_WindowFlags flags = SDL_WINDOW_RESIZABLE | (config.fullscreen ? SDL_WINDOW_FULLSCREEN : 0);
-        if (!SDL_CreateWindowAndRenderer(title, app.log_w * config.scale, FB_H * config.scale, flags, &app.window,
-                                         &app.renderer)) {
+        app.window = SDL_CreateWindow(app.title, app.log_w * config.scale, FB_H * config.scale, flags);
+        if (!app.window) {
+            fail(SDL_GetError());
+            return 1;
+        }
+    }
+    if (want_gpu) {
+        app.gpu = gpu_init(app.window, SDL_getenv("MK64_GPU_DEBUG") != NULL);
+        if (!app.gpu) ultra_log("GPU indisponivel (%s): usando o renderizador em software", gpu_error());
+    }
+    if (!headless && !app.gpu) {
+        app.renderer = SDL_CreateRenderer(app.window, NULL);
+        if (!app.renderer) {
             fail(SDL_GetError());
             return 1;
         }
@@ -456,7 +491,8 @@ int main(int argc, char **argv) {
     rdp_reset(app.rdram);
     // Internal resolution: mk64.ini, or MK64_RES_SCALE (headless runs default to 1x).
     const char *res = SDL_getenv("MK64_RES_SCALE");
-    int internal = res ? SDL_clamp(SDL_atoi(res), 1, 4) : headless ? 1 : config.internal;
+    int max_internal = app.gpu ? 8 : 4;
+    int internal = SDL_clamp(res ? SDL_atoi(res) : headless ? 1 : config.internal, 1, max_internal);
     int wide = app.log_w != FB_W;
     int max_w = SDL_max(2 * FB_W, app.log_w + 2);  // widest display copy, in 1x pixels
     // Interpolation: mk64.ini, or MK64_INTERP (headless runs default to off).

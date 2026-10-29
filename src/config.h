@@ -15,9 +15,10 @@ typedef struct Config {
     int fullscreen;
     int smooth;      // linear filtering instead of nearest
     int volume;      // 0..100
-    int internal;    // internal resolution, multiple of 320x240 (1-4)
+    int internal;    // internal resolution, multiple of 320x240 (1-4; up to 8 on the GPU)
     float aspect;    // picture width / height: 4:3, or wider for a wider view of the 3D scene
     int interp;      // 60 fps display through in-between images
+    int gpu;         // display copies drawn by the GPU (Vulkan) instead of the software renderer
     int keys[CFG_KEY_COUNT];  // SDL_Scancode
 } Config;
 

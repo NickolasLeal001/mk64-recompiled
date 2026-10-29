@@ -26,6 +26,24 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(SDL3)
 
+# GPU renderer (SDL_gpu on Vulkan): GLSL shaders compiled to SPIR-V by glslc from the Vulkan SDK
+# and embedded as C arrays. Without glslc the game builds with the software renderer only.
+find_program(GLSLC glslc HINTS "$ENV{VULKAN_SDK}/Bin" "$ENV{VULKAN_SDK}/bin")
+set(GPU_SHADER_INC "")
+if(GLSLC)
+  foreach(src rdp.vert rdp.frag)
+    set(out ${CMAKE_BINARY_DIR}/shaders/${src}.inc)
+    add_custom_command(
+      OUTPUT ${out}
+      COMMAND ${GLSLC} -O --target-env=vulkan1.0 -mfmt=c -o ${out} ${CMAKE_SOURCE_DIR}/gfx/shaders/${src}
+      DEPENDS ${CMAKE_SOURCE_DIR}/gfx/shaders/${src} ${CMAKE_SOURCE_DIR}/gfx/shaders/rdp_common.glsl
+      COMMENT "glslc ${src}")
+    list(APPEND GPU_SHADER_INC ${out})
+  endforeach()
+else()
+  message(WARNING "glslc (Vulkan SDK) nao encontrado: o modo GPU fica desligado")
+endif()
+
 add_library(rom STATIC src/rom.c src/sha1.c)
 target_include_directories(rom PUBLIC src)
 
@@ -41,9 +59,13 @@ if(RECOMP_GENERATED)
     target_compile_options(recomp_game PRIVATE /bigobj /W3 /wd4102 /wd4127 /wd4146)
   endif()
   # The game: recompiled code + native libultra runtime + SDL host.
-  add_executable(mk64 src/main.c src/input.c src/config.c runtime/ultra.c runtime/io.c gfx/rsp.c gfx/rdp.c audio/abi.c)
-  target_include_directories(mk64 PRIVATE runtime generated src gfx audio)
+  add_executable(mk64 src/main.c src/input.c src/config.c runtime/ultra.c runtime/io.c gfx/rsp.c gfx/rdp.c gfx/gpu.c
+                      audio/abi.c ${GPU_SHADER_INC})
+  target_include_directories(mk64 PRIVATE runtime generated src gfx audio ${CMAKE_BINARY_DIR}/shaders)
   target_link_libraries(mk64 PRIVATE recomp_game rom SDL3::SDL3-static)
+  if(GLSLC)
+    target_compile_definitions(mk64 PRIVATE MK64_GPU=1)
+  endif()
   if(MSVC)
     # /Ob2: RelWithDebInfo defaults to /Ob1, which leaves the renderer's per-pixel helpers
     # (static, not marked inline) as real calls.
