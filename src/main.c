@@ -334,6 +334,15 @@ static int on_retrace(void *user) {
             else if (phase >= 60 && phase < 64) ultra_pads[0].buttons |= 0x8000;  // A
         }
     }
+    // MK64_POKE=n[-m]:addr=value[;...]: store a 32-bit value at retrace n (or every retrace from n
+    // to m), for tests that need a game state the scripted input cannot reach.
+    for (const char *p = SDL_getenv("MK64_POKE"); p && *p; p = SDL_strchr(p, ';') ? SDL_strchr(p, ';') + 1 : "") {
+        const char *colon = SDL_strchr(p, ':'), *eq = colon ? SDL_strchr(colon, '=') : NULL;
+        const char *dash = SDL_strchr(p, '-');
+        uint64_t from = (uint64_t)SDL_atoi(p), to = dash && dash < colon ? (uint64_t)SDL_atoi(dash + 1) : from;
+        if (eq && n >= from && n <= to)
+            mem_w32(app->rdram, (uint32_t)SDL_strtoul(colon + 1, NULL, 16), (uint32_t)SDL_strtoul(eq + 1, NULL, 16));
+    }
     // MK64_DUMPRAM=n[,n...]: write RDRAM in N64 byte order to ram_<n>.bin (debugging and analysis).
     const char *dump = SDL_getenv("MK64_DUMPRAM");
     int dump_now = 0;

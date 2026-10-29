@@ -2,8 +2,9 @@
 
 Each tests/replays/<name>.json holds a scripted input (MK64_INPUT syntax), the retrace to stop at,
 the capture interval and the expected FNV-1a hash of each captured frame (and, with
-"check_eeprom", the SHA-1 of the EEPROM the run leaves behind). The game runs headless
-and deterministic; any differing hash fails the replay.
+"check_eeprom" / "check_pak", the SHA-1 of the EEPROM / Controller Pak the run leaves behind).
+"ram_checks" are conditions on RAM values at chosen retraces. The game runs headless and
+deterministic; any differing hash or failed check fails the replay.
 
 Usage:
   python -I tools/replay.py <rom.z64> [name ...]          run and compare
@@ -45,10 +46,12 @@ def run(rom, spec, name):
         for line in open(path):
             n, h = line.split()
             hashes[n] = h
-    # check_eeprom: the save written by the run (records) is part of the expected result.
-    eep = os.path.join(work, "mk64.eep")
-    if spec.get("check_eeprom") and os.path.exists(eep):
-        hashes["eeprom"] = hashlib.sha1(open(eep, "rb").read()).hexdigest()
+    # check_eeprom / check_pak: the saves written by the run (records, Controller Pak) are part of
+    # the expected result.
+    for key, fname in (("eeprom", "mk64.eep"), ("pak", "mk64.mpk")):
+        f = os.path.join(work, fname)
+        if spec.get("check_" + key) and os.path.exists(f):
+            hashes[key] = hashlib.sha1(open(f, "rb").read()).hexdigest()
     return hashes, [c["descricao"] for c in checks if not ram_check(work, c)]
 
 

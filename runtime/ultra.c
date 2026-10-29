@@ -551,10 +551,11 @@ void func_800CD130(uint8_t *rdram, Ctx *ctx) {  // osContInit(mq, &bitpattern, s
         int on = ultra_pads[k].connected;
         bits |= (uint8_t)(on << k);
         mem_w16(ultra_rdram, status + 4 * k, on ? CONT_TYPE_NORMAL : 0);
-        mem_w8(ultra_rdram, status + 4 * k + 2, 0);
+        mem_w8(ultra_rdram, status + 4 * k + 2, on ? (k == 0 ? 0x01 : 0x02) : 0);  // CONT_CARD_ON
         mem_w8(ultra_rdram, status + 4 * k + 3, on ? 0 : CONT_NO_RESPONSE_ERROR);
     }
     mem_w8(ultra_rdram, pattern, bits);
+    mem_w8(ultra_rdram, 0x80196541u, 4);  // __osMaxControllers, read by the libultra Pfs code
     ultra_log("osContInit pattern=0x%x", bits);
     RET(ctx, 0);
 }
@@ -604,21 +605,161 @@ void func_800D0050(uint8_t *rdram, Ctx *ctx) {  // osEepromLongWrite(mq, block, 
     RET(ctx, 0);
 }
 
-// Controller Pak: reported as absent for now (PFS_ERR_NOPACK).
-#define PFS_ERR_NOPACK 1
-void func_800CE3B0(uint8_t *rdram, Ctx *ctx) {  // osPfsIsPlug(mq, &pattern)
+// Controller Pak (32 KB, controller 1), kept in mk64.mpk next to the executable. The game's own
+// libultra Pfs code runs on top of the PIF: __osSiRawStartDma moves the 64-byte PIF RAM, and the
+// commands in it are carried out here, like the joybus devices would.
+#define PAK_SIZE 0x8000
+static uint8_t g_pak[PAK_SIZE];
+static char g_pak_path[1024];
+static uint8_t g_pif[64];
+
+static void pak_save(void) {
+    FILE *f = fopen(g_pak_path, "wb");
+    if (!f) return;
+    fwrite(g_pak, 1, sizeof g_pak, f);
+    fclose(f);
+}
+
+// A new pak as the console formats it: label, the ID block and its three copies (with their
+// checksums), and an inode table with every page free.
+static void pak_format(void) {
+    memset(g_pak, 0, sizeof g_pak);
+    for (int k = 0; k < 32; k++) g_pak[k] = (uint8_t)k;
+    g_pak[0] = 0x81;
+    uint8_t id[32] = {0xFF, 0xFF, 0xFF, 0xFF, 0x05, 0x1A, 0x5F, 0x13, 0, 0, 0, 0, 0, 0, 0, 0,
+                      0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x01, 0x01, 0x00};
+    uint16_t sum = 0, inv = 0;
+    for (int k = 0; k < 28; k += 2) {
+        uint16_t w = (uint16_t)(id[k] << 8 | id[k + 1]);
+        sum = (uint16_t)(sum + w);
+        inv = (uint16_t)(inv + (uint16_t)~w);
+    }
+    id[28] = (uint8_t)(sum >> 8); id[29] = (uint8_t)sum;
+    id[30] = (uint8_t)(inv >> 8); id[31] = (uint8_t)inv;
+    static const int copies[4] = {0x20, 0x60, 0x80, 0xC0};
+    for (int k = 0; k < 4; k++) memcpy(g_pak + copies[k], id, sizeof id);
+    for (int page = 1; page <= 2; page++) {  // inode table and its backup
+        uint8_t *t = g_pak + page * 0x100;
+        for (int e = 5; e < 128; e++) t[2 * e + 1] = 0x03;  // free page
+        t[1] = 0x71;                                          // sum of entries 5..127
+    }
+}
+
+static void pak_load(void) {
+    if (ultra_deterministic) {
+        strcpy(g_pak_path, "mk64.mpk");  // the working directory (replays start empty: a new pak)
+    } else {
+        DWORD n = GetModuleFileNameA(NULL, g_pak_path, sizeof g_pak_path);
+        char *slash = n ? strrchr(g_pak_path, '\\') : NULL;
+        if (slash) slash[1] = '\0';
+        else g_pak_path[0] = '\0';
+        strncat(g_pak_path, "mk64.mpk", sizeof g_pak_path - strlen(g_pak_path) - 1);
+    }
+    FILE *f = fopen(g_pak_path, "rb");
+    if (f) {
+        size_t got = fread(g_pak, 1, sizeof g_pak, f);
+        fclose(f);
+        ultra_log("Controller Pak: %zu bytes de %s", got, g_pak_path);
+        if (got == sizeof g_pak) return;
+    }
+    pak_format();
+}
+
+// Joybus data CRC: polynomial 0x85 over the 32 bytes and one more zero byte.
+static uint8_t pak_crc(const uint8_t *data) {
+    uint8_t crc = 0;
+    for (int i = 0; i <= 32; i++)
+        for (int b = 7; b >= 0; b--) {
+            uint8_t x = (crc & 0x80) ? 0x85 : 0;
+            crc = (uint8_t)(crc << 1);
+            if (i < 32 && (data[i] >> b) & 1) crc |= 1;
+            crc ^= x;
+        }
+    return crc;
+}
+
+// One joybus command for channel ch: cmd, tx data and room for rx bytes. Returns 0 when nothing
+// answers (no controller), which the PIF reports with 0x80 in the rx length.
+static int pif_command(int ch, const uint8_t *tx, int txn, uint8_t *rx, int rxn) {
+    if (ch > 3 || !ultra_pads[ch].connected || txn < 1) return 0;
+    int pak = ch == 0;
+    switch (tx[0]) {
+    case 0x00: case 0xFF:  // status: type 0x0005 and pak presence
+        if (rxn >= 3) { rx[0] = 0x05; rx[1] = 0x00; rx[2] = pak ? 0x01 : 0x02; }
+        return 1;
+    case 0x01:  // buttons
+        if (rxn >= 4) {
+            const UltraPad *p = &ultra_pads[ch];
+            rx[0] = (uint8_t)(p->buttons >> 8); rx[1] = (uint8_t)p->buttons;
+            rx[2] = (uint8_t)p->stick_x; rx[3] = (uint8_t)p->stick_y;
+        }
+        return 1;
+    case 0x02: case 0x03: {  // pak read / write: 16-bit address (low 5 bits are its CRC), 32 bytes
+        if (!pak || txn < 3) return 0;
+        uint32_t addr = (uint32_t)(tx[1] << 8 | tx[2]) & ~0x1Fu;
+        if (tx[0] == 0x02) {
+            if (rxn < 33) return 1;
+            for (int k = 0; k < 32; k++) rx[k] = addr < PAK_SIZE ? g_pak[addr + k] : 0;
+            rx[32] = pak_crc(rx);
+        } else {
+            if (txn < 35 || rxn < 1) return 1;
+            if (addr < PAK_SIZE) {
+                memcpy(g_pak + addr, tx + 3, 32);
+                pak_save();
+            }
+            rx[0] = pak_crc(tx + 3);  // 0x8000 and up (bank select, accessories) is ignored
+        }
+        return 1;
+    }
+    default:
+        return 0;
+    }
+}
+
+static void pif_run(void) {
+    int ch = 0;
+    for (int k = 0; k < 63 && ch < 5;) {
+        uint8_t txb = g_pif[k];
+        if (txb == 0xFE) break;
+        if (txb == 0xFF) { k++; continue; }   // padding
+        if (txb == 0x00) { k++; ch++; continue; }  // channel skipped
+        int txn = txb & 0x3F;
+        if (k + 1 >= 63) break;
+        int rxn = g_pif[k + 1] & 0x3F;
+        int at = k + 2;
+        if (at + txn + rxn > 63) break;
+        if (!pif_command(ch, g_pif + at, txn, g_pif + at + txn, rxn)) g_pif[k + 1] |= 0x80;
+        k = at + txn + rxn;
+        ch++;
+    }
+    g_pif[63] = 0;
+}
+
+void func_800D3AA0(uint8_t *rdram, Ctx *ctx) {  // __osSiRawStartDma(direction, pif buffer)
     (void)rdram;
-    mem_w8(ultra_rdram, ARG(ctx, 1), 0);
+    uint32_t dir = ARG(ctx, 0), buf = ARG(ctx, 1);
+    if (dir == 1) {  // OS_WRITE: RDRAM -> PIF RAM, which runs the commands
+        for (int k = 0; k < 64; k++) g_pif[k] = mem_r8(ultra_rdram, buf + (uint32_t)k);
+        static int logged;
+        if (getenv("MK64_PIFLOG") && ultra_stats.retraces >= (uint64_t)atol(getenv("MK64_PIFLOG")) && logged++ < 60) {
+            char line[200];
+            for (int k = 0; k < 64; k++) snprintf(line + 2 * k, 3, "%02x", g_pif[k]);
+            ultra_log("PIF in  %s", line);
+        }
+        if (g_pif[63] & 1) pif_run();
+        if (getenv("MK64_PIFLOG") && logged && logged <= 60) {
+            char line[200];
+            for (int k = 0; k < 64; k++) snprintf(line + 2 * k, 3, "%02x", g_pif[k]);
+            ultra_log("PIF out %s", line);
+        }
+    } else {  // OS_READ: PIF RAM -> RDRAM
+        for (int k = 0; k < 64; k++) mem_w8(ultra_rdram, buf + (uint32_t)k, g_pif[k]);
+    }
+    ultra_post_event(OS_EVENT_SI);  // the SI interrupt that ends the DMA
     RET(ctx, 0);
 }
-void func_800CE720(uint8_t *rdram, Ctx *ctx) { (void)rdram; RET(ctx, PFS_ERR_NOPACK); }
-void func_800CE8E0(uint8_t *rdram, Ctx *ctx) { (void)rdram; RET(ctx, PFS_ERR_NOPACK); }
-void func_800CEA30(uint8_t *rdram, Ctx *ctx) { (void)rdram; RET(ctx, PFS_ERR_NOPACK); }
-void func_800CED20(uint8_t *rdram, Ctx *ctx) { (void)rdram; RET(ctx, PFS_ERR_NOPACK); }
-void func_800CF880(uint8_t *rdram, Ctx *ctx) { (void)rdram; RET(ctx, PFS_ERR_NOPACK); }
-void func_800CFA40(uint8_t *rdram, Ctx *ctx) { (void)rdram; RET(ctx, PFS_ERR_NOPACK); }
-void func_800D03CC(uint8_t *rdram, Ctx *ctx) { (void)rdram; RET(ctx, PFS_ERR_NOPACK); }
-void func_800D07D0(uint8_t *rdram, Ctx *ctx) { (void)rdram; RET(ctx, PFS_ERR_NOPACK); }
+
+void func_800D7B70(uint8_t *rdram, Ctx *ctx) { (void)rdram; RET(ctx, 0); }  // __osSiDeviceBusy
 
 // Audio interface. The NTSC VI clock drives the AI DAC.
 #define VI_NTSC_CLOCK 48681812u
@@ -651,6 +792,7 @@ void ultra_run(uint8_t *rdram, const uint8_t *rom, size_t rom_size, const UltraH
     QueryPerformanceFrequency(&g_qpf);
     QueryPerformanceCounter(&g_qpc0);
     eeprom_load();
+    pak_load();
 
     // IPL3 (CIC-6102) copies 1 MB from ROM 0x1000 to the entry point, then jumps there.
     rom_to_rdram(0x1000, 0x80000400u, 0x100000);

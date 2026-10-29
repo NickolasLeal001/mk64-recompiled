@@ -4,6 +4,7 @@
 *.n64
 *.bin
 *.eep
+*.mpk
 assets/
 
 build/

@@ -1,0 +1,34 @@
+{
+ "descricao": "Controller Pak: Time Trials no Luigi Raceway (piloto automatico), SAVE GHOST no arquivo 1 e COURSE CHANGE, que mostra a etiqueta GHOST lida do pak. O jogo recusa fantasmas pilotados pela IA (0x80162dd4 = 1); o teste zera esse aviso com MK64_POKE.",
+ "input": "800-803:START;870-873:A;920-923:DOWN;970-973:A;1020-1023:A;1070-1073:A;1120-1123:A;1170-1173:A;1300-1303:A;1370-1373:A;1420-1423:A;9900-9903:START;10000-10003:DOWN;10030-10033:DOWN;10060-10063:DOWN;10090-10093:DOWN;10120-10123:DOWN;10200-10203:START;10350-10353:START;10450-10453:UP;10480-10483:UP;10510-10513:UP;10540-10543:UP;10600-10603:START",
+ "autopilot": 1460,
+ "env": {
+  "MK64_AUTOPILOT_MANUAL": "1",
+  "MK64_POKE": "10150-10300:80162dd4=0"
+ },
+ "exit_at": 11000,
+ "shots": "100:10300",
+ "check_eeprom": true,
+ "check_pak": true,
+ "ram_checks": [
+  {
+   "retrace": 10900,
+   "addr": "0x800e86f8",
+   "type": "u32",
+   "bits_set": "0x01000000",
+   "descricao": "pak inicializado pelo jogo (osPfsInitPak sem erro)"
+  }
+ ],
+ "expected": {
+  "10300": "d3ec2f832924bd66",
+  "10400": "40afff6c40d51e5e",
+  "10500": "35cfe594ffa0795a",
+  "10600": "f5e44f8a12d12101",
+  "10700": "cb80d1b3c9ed27b9",
+  "10800": "d74d4063f21cfac3",
+  "10900": "69299f4a91195a62",
+  "11000": "3049f6064d983298",
+  "eeprom": "7973550817bc6ad73ec3e430cccb90b4fad69b18",
+  "pak": "aa4c98888ed54ec34bf2cf5c5ad5fd326d2f95ff"
+ }
+}
