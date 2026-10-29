@@ -307,7 +307,7 @@ static int on_retrace(void *user) {
         uint32_t pbits = mem_r32(app->rdram, 0x801644D0u);
         float progress;
         SDL_memcpy(&progress, &pbits, 4);
-        int near_end = progress >= 2.97f && progress < 4.0f;
+        int near_end = progress >= 2.97f && progress < 4.0f && !(flags & 0x0800);  // until it crosses the line
         // The lap counter (0x80164390) is -1 until the race is under way. Taking over earlier
         // can leave no human player when the start is set up, and then no Lakitu comes to count
         // down: player 1 only accelerates until then.
