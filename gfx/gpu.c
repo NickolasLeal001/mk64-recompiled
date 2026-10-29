@@ -25,7 +25,9 @@ int gpu_init(SDL_Window *window, int debug) {
     return 0;
 }
 int gpu_active(void) { return 0; }
-void gpu_present(SDL_GPUTexture *tex, int w, int h, int log_w, int smooth) { (void)tex; (void)w; (void)h; (void)log_w; (void)smooth; }
+void gpu_present(SDL_GPUTexture *tex, int w, int h, int log_w, int smooth, SDL_GPUTexture *hud, int hud_w, int hud_h) {
+    (void)tex; (void)w; (void)h; (void)log_w; (void)smooth; (void)hud; (void)hud_w; (void)hud_h;
+}
 SDL_GPUTexture *gpu_upload_image(int slot, const uint32_t *pixels, int w, int h) { (void)slot; (void)pixels; (void)w; (void)h; return NULL; }
 int gpu_download(SDL_GPUTexture *tex, int w, int h, uint32_t *out) { (void)tex; (void)w; (void)h; (void)out; return 0; }
 void gpu_wait_idle(void) {}
@@ -738,7 +740,7 @@ SDL_GPUTexture *gpu_upload_image(int slot, const uint32_t *pixels, int w, int h)
     return u->tex;
 }
 
-void gpu_present(SDL_GPUTexture *tex, int w, int h, int log_w, int smooth) {
+void gpu_present(SDL_GPUTexture *tex, int w, int h, int log_w, int smooth, SDL_GPUTexture *hud, int hud_w, int hud_h) {
     if (!g_win) return;
     SDL_GPUCommandBuffer *cmd = SDL_AcquireGPUCommandBuffer(g_dev);
     SDL_GPUTexture *swap = NULL;
@@ -774,6 +776,17 @@ void gpu_present(SDL_GPUTexture *tex, int w, int h, int log_w, int smooth) {
         blit.load_op = SDL_GPU_LOADOP_LOAD;
         blit.filter = smooth ? SDL_GPU_FILTER_LINEAR : SDL_GPU_FILTER_NEAREST;
         SDL_BlitGPUTexture(cmd, &blit);
+        if (hud) {  // HUD_MARGIN logical pixels in from the picture's corner, 2 per image pixel
+            blit.source.texture = hud;
+            blit.source.w = (Uint32)hud_w;
+            blit.source.h = (Uint32)hud_h;
+            blit.destination.x = (Uint32)(x + HUD_MARGIN * scale + 0.5f);
+            blit.destination.y = (Uint32)(y + HUD_MARGIN * scale + 0.5f);
+            blit.destination.w = (Uint32)(hud_w * 2 * scale + 0.5f);
+            blit.destination.h = (Uint32)(hud_h * 2 * scale + 0.5f);
+            blit.filter = SDL_GPU_FILTER_NEAREST;
+            SDL_BlitGPUTexture(cmd, &blit);
+        }
     }
     SDL_SubmitGPUCommandBuffer(cmd);
 }

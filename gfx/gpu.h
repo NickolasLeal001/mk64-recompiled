@@ -14,8 +14,10 @@ int gpu_active(void);
 const char *gpu_error(void);
 
 // Presentation. `tex` (w x h) fills the log_w x 240 logical area when it is wider than 4:3, or its
-// 320-wide middle otherwise; the logical area is letterboxed into the window.
-void gpu_present(SDL_GPUTexture *tex, int w, int h, int log_w, int smooth);
+// 320-wide middle otherwise; the logical area is letterboxed into the window. `hud` (optional,
+// hud_w x hud_h) goes over the picture's top left corner, at 2 logical pixels per pixel.
+#define HUD_MARGIN 4
+void gpu_present(SDL_GPUTexture *tex, int w, int h, int log_w, int smooth, SDL_GPUTexture *hud, int hud_w, int hud_h);
 // A 32-bit ABGR image (rdp_read_framebuffer format) in a texture of the presenter, for frames the
 // GPU did not draw.
 SDL_GPUTexture *gpu_upload_image(int slot, const uint32_t *pixels, int w, int h);

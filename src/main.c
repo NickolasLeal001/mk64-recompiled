@@ -21,6 +21,10 @@ static void fail(const char *msg) {
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "MK64 Port", msg, NULL);
 }
 
+// FPS counter: 3x5 glyphs, one column apart, inside a 1-pixel black frame.
+#define HUD_H 7
+#define HUD_MAX_W 64
+
 typedef struct App {
     SDL_Window *window;
     SDL_Renderer *renderer;
@@ -38,6 +42,15 @@ typedef struct App {
     uint8_t *rdram;
     uint32_t pixels[FB_W * FB_H];
     int show_status;
+    uint64_t shown_id;     // image on screen (framebuffer, or in-between stamp), for the fps count
+    int fps_images;        // new images shown since fps_t0
+    uint64_t fps_t0;
+    int fps;               // last count
+    uint32_t hud[HUD_MAX_W * HUD_H];  // the fps text (ABGR)
+    int hud_w;
+    int hud_dirty;
+    SDL_Texture *hud_tex;
+    SDL_GPUTexture *hud_gpu;
     int shots;  // MK64_SHOTS=N[:from[:to]]: save a BMP every N retraces within [from, to]
     uint64_t shots_from, shots_to;
     uint64_t exit_at;  // MK64_EXIT_AT: stop after this retrace
@@ -234,6 +247,44 @@ static void save_shot(App *app) {
     }
 }
 
+// The counter text into app->hud: digits and "FPS" in yellow on black.
+static void hud_build(App *app, const char *text) {
+    static const char chars[] = "0123456789FPS";
+    static const uint16_t glyphs[] = {075557, 026227, 071747, 071717, 055711, 074717, 074757, 071111, 075757,
+                                      075717, 074644, 075744, 034216};
+    int n = (int)SDL_strlen(text);
+    app->hud_w = SDL_min(1 + 4 * n, HUD_MAX_W);
+    for (int k = 0; k < app->hud_w * HUD_H; k++) app->hud[k] = 0xFF000000u;
+    for (int c = 0; c < n && 4 * c + 4 <= app->hud_w; c++) {
+        const char *at = SDL_strchr(chars, text[c]);
+        if (!at || !text[c]) continue;  // space
+        uint16_t g = glyphs[at - chars];
+        for (int y = 0; y < 5; y++)
+            for (int x = 0; x < 3; x++)
+                if (g >> (14 - 3 * y - x) & 1) app->hud[(1 + y) * app->hud_w + 1 + 4 * c + x] = 0xFF00FFFFu;
+    }
+    app->hud_dirty = 1;
+}
+
+// Counts the new images shown (the in-between ones included) and refreshes the text twice a second.
+static void fps_update(App *app, uint64_t id) {
+    if (id != app->shown_id) {
+        app->shown_id = id;
+        app->fps_images++;
+    }
+    uint64_t now = SDL_GetTicksNS();
+    if (!app->fps_t0) app->fps_t0 = now;
+    if (now - app->fps_t0 < 500000000ull) return;
+    int fps = (int)(app->fps_images * 1e9 / (double)(now - app->fps_t0) + 0.5);
+    app->fps_images = 0;
+    app->fps_t0 = now;
+    if (fps == app->fps) return;
+    app->fps = fps;
+    char text[16];
+    SDL_snprintf(text, sizeof text, "%d FPS", fps);
+    hud_build(app, text);
+}
+
 // Each retrace shows the framebuffer the game handed to osViSwapBuffer (F1: status overlay).
 // With interpolation, a frame that replaces one held for two or more retraces (the game draws at
 // 30 fps or less) is first shown as its in-between image, and itself on the next retrace.
@@ -246,6 +297,7 @@ static int on_retrace(void *user) {
             app->show_status = !app->show_status;
             if (!app->show_status && app->gpu && app->window) SDL_SetWindowTitle(app->window, app->title);
         }
+        if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F2) config.show_fps = !config.show_fps;
         if (e.type == SDL_EVENT_KEY_DOWN && e.key.key == SDLK_F11 && app->window) {
             config.fullscreen = !config.fullscreen;
             SDL_SetWindowFullscreen(app->window, config.fullscreen);
@@ -279,11 +331,12 @@ static int on_retrace(void *user) {
         int hw = 0, hh = 0;
         int want_mid = app->interp && swapped && app->prev_held >= 2;
         int shot = app->shots && n % (uint64_t)app->shots == 0 && n >= app->shots_from && n <= app->shots_to;
+        uint64_t shown = fb;  // the frame itself, or its in-between image (high bit set)
         if (app->gpu) {
             // The GPU path hands over textures; screenshots read them back.
             uint64_t mid = 0;
             SDL_GPUTexture *tex = want_mid ? rdp_gpu_frame(fb, FB_W, FB_H, 1, &mid, &hw, &hh) : NULL;
-            if (tex && mid != app->interp_shown) app->interp_shown = mid;
+            if (tex && mid != app->interp_shown) app->interp_shown = mid, shown = mid | 1ull << 63;
             else tex = rdp_gpu_frame(fb, FB_W, FB_H, 0, NULL, &hw, &hh);
             app->showing_hi = tex != NULL;
             app->gpu_shown = tex ? tex : app->window ? gpu_upload_image(0, app->pixels, FB_W, FB_H) : NULL;
@@ -293,6 +346,7 @@ static int on_retrace(void *user) {
             if (mid && mid != app->interp_shown) {
                 app->interp_shown = mid;
                 app->showing_hi = 1;
+                shown = mid | 1ull << 63;
             } else {
                 app->showing_hi = app->hpixels && rdp_read_framebuffer_hires(fb, FB_W, FB_H, app->hpixels, &hw, &hh);
             }
@@ -307,6 +361,7 @@ static int on_retrace(void *user) {
         }
         app->hi_w = hw;
         app->hi_h = hh;
+        fps_update(app, shown);
         if (shot) {
             save_shot(app);
             // FNV-1a of the frame, for replay regression checks.
@@ -382,8 +437,14 @@ static int on_retrace(void *user) {
     }
     if (app->exit_at && n >= app->exit_at) return 0;
     if (app->gpu && app->window) {
-        if (app->showing_hi) gpu_present(app->gpu_shown, app->hi_w, app->hi_h, app->log_w, config.smooth);
-        else gpu_present(app->gpu_shown, FB_W, FB_H, app->log_w, config.smooth);
+        SDL_GPUTexture *hud = NULL;
+        if (config.show_fps && app->hud_w) {
+            if (app->hud_dirty || !app->hud_gpu) app->hud_gpu = gpu_upload_image(1, app->hud, app->hud_w, HUD_H);
+            app->hud_dirty = 0;
+            hud = app->hud_gpu;
+        }
+        if (app->showing_hi) gpu_present(app->gpu_shown, app->hi_w, app->hi_h, app->log_w, config.smooth, hud, app->hud_w, HUD_H);
+        else gpu_present(app->gpu_shown, FB_W, FB_H, app->log_w, config.smooth, hud, app->hud_w, HUD_H);
         if (app->show_status) {  // no text drawing on this path: the status goes to the title bar
             char line[160];
             SDL_snprintf(line, sizeof line, "MK64 Port - retraces %llu, triangulos %llu, framebuffer %08x",
@@ -397,8 +458,22 @@ static int on_retrace(void *user) {
     SDL_RenderClear(app->renderer);
     // A widened display copy fills the logical area; a 4:3 one, or the 1x frame, sits in its middle.
     SDL_FRect mid = {(app->log_w - FB_W) / 2.0f, 0, FB_W, FB_H};
-    if (app->showing_hi && app->hi_w * 3 > app->hi_h * 4) SDL_RenderTexture(app->renderer, app->screen_hi, NULL, NULL);
+    int wide = app->showing_hi && app->hi_w * 3 > app->hi_h * 4;
+    if (wide) SDL_RenderTexture(app->renderer, app->screen_hi, NULL, NULL);
     else SDL_RenderTexture(app->renderer, app->showing_hi ? app->screen_hi : app->screen, NULL, &mid);
+    if (config.show_fps && app->hud_w) {
+        if (app->hud_dirty || !app->hud_tex) {
+            if (app->hud_tex && app->hud_tex->w != app->hud_w) SDL_DestroyTexture(app->hud_tex), app->hud_tex = NULL;
+            if (!app->hud_tex) {
+                app->hud_tex = SDL_CreateTexture(app->renderer, SDL_PIXELFORMAT_ABGR8888, SDL_TEXTUREACCESS_STREAMING, app->hud_w, HUD_H);
+                SDL_SetTextureScaleMode(app->hud_tex, SDL_SCALEMODE_NEAREST);
+            }
+            SDL_UpdateTexture(app->hud_tex, NULL, app->hud, app->hud_w * 4);
+            app->hud_dirty = 0;
+        }
+        SDL_FRect at = {(wide ? 0 : mid.x) + HUD_MARGIN, HUD_MARGIN, app->hud_w * 2.0f, HUD_H * 2.0f};
+        SDL_RenderTexture(app->renderer, app->hud_tex, NULL, &at);
+    }
     if (!app->show_status) {
         SDL_RenderPresent(app->renderer);
         return 1;

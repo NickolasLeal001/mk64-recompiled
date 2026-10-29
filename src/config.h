@@ -19,6 +19,7 @@ typedef struct Config {
     float aspect;    // picture width / height: 4:3, or wider for a wider view of the 3D scene
     int interp;      // 60 fps display through in-between images
     int gpu;         // display copies drawn by the GPU (Vulkan) instead of the software renderer
+    int show_fps;    // frame counter in the corner of the picture (F2 toggles)
     int keys[CFG_KEY_COUNT];  // SDL_Scancode
 } Config;
 

@@ -37,6 +37,7 @@ static void write_default(const char *path) {
     fprintf(f, "proporcao = 4:3\n\n");
     fprintf(f, "# 60 quadros por segundo: imagens intermediarias entre os quadros do jogo (30 por segundo)\n");
     fprintf(f, "interpolacao = 1\n\n");
+    fprintf(f, "# Contador de quadros por segundo no canto da imagem (F2 alterna)\nmostrar_fps = 1\n\n");
     fprintf(f, "# Volume de 0 a 100\nvolume = 100\n\n");
     fprintf(f, "# Teclado: nomes de tecla do SDL (ex.: X, Return, Left Shift, Space, Up)\n");
     for (int k = 0; k < CFG_KEY_COUNT; k++) fprintf(f, "tecla_%s = %s\n", KEYS[k].key, KEYS[k].def);
@@ -67,6 +68,7 @@ void config_load(void) {
     config.aspect = 4.0f / 3.0f;
     config.interp = 1;
     config.gpu = 1;
+    config.show_fps = 1;
     for (int k = 0; k < CFG_KEY_COUNT; k++) config.keys[k] = SDL_GetScancodeFromName(KEYS[k].def);
 
     char path[1024];
@@ -92,6 +94,7 @@ void config_load(void) {
         else if (!strcmp(key, "proporcao")) config.aspect = config_parse_aspect(val, config.aspect);
         else if (!strcmp(key, "renderizador")) config.gpu = strcmp(val, "cpu") != 0;
         else if (!strcmp(key, "interpolacao")) config.interp = SDL_atoi(val) != 0;
+        else if (!strcmp(key, "mostrar_fps")) config.show_fps = SDL_atoi(val) != 0;
         else if (!strcmp(key, "volume")) config.volume = SDL_clamp(SDL_atoi(val), 0, 100);
         else if (!strncmp(key, "tecla_", 6)) {
             for (int k = 0; k < CFG_KEY_COUNT; k++) {
