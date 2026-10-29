@@ -82,17 +82,19 @@ static void random_state(Ctx *c, uint8_t *rdram) {
 
 #include "rewritten_list.c.inc"
 
+// 0: generated, 1: rewritten returning a value, 2: rewritten returning nothing.
 static int is_rewritten(uint32_t addr) {
     for (size_t k = 0; k < sizeof rewritten_addrs / sizeof rewritten_addrs[0]; k++)
-        if (rewritten_addrs[k] == addr) return 1;
+        if (rewritten_addrs[k] == addr) return rewritten_void[k] ? 2 : 1;
     return 0;
 }
 
 // o32 ABI-visible state: result v0 (the rewrites return at most 32 bits, so v1 is scratch), f0/f2,
-// callee-saved s0-s7/fp, f20-f31, sp and ra.
-static int abi_reg(int r) { return r == 2 || (r >= 16 && r <= 23) || r == 29 || r == 30 || r == 31; }
-static int abi_freg(int f) { return f <= 3 || f >= 20; }
-static int g_abi_only;
+// callee-saved s0-s7/fp, f20-f31, sp and ra. A function returning nothing leaves v0 and f0-f3 as
+// scratch too.
+static int g_abi_only, g_abi_void;
+static int abi_reg(int r) { return (r == 2 && !g_abi_void) || (r >= 16 && r <= 23) || r == 29 || r == 30 || r == 31; }
+static int abi_freg(int f) { return (f <= 3 && !g_abi_void) || f >= 20; }
 
 static int compare(const Ctx *a, const Ctx *b, const uint8_t *ma, const uint8_t *mb, char *why, size_t n) {
     for (int r = 1; r < 32; r++) {
@@ -161,7 +163,8 @@ int main(int argc, char **argv) {
         if (addr < first || (only && addr != first) || (addr >= LIBULTRA_START && addr < LIBULTRA_END)) continue;
         int any = 0, bad = 0;
         char why[160] = "";
-        g_abi_only = is_rewritten(addr);  // hand-written C: only the ABI contract must match
+        g_abi_only = is_rewritten(addr) != 0;  // hand-written C: only the ABI contract must match
+        g_abi_void = is_rewritten(addr) == 2;
         for (int t = 0; t < trials && !bad; t++) {
             Ctx c0, ca, cb;
             memcpy(ma, base, RDRAM_SIZE);

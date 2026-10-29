@@ -1,7 +1,23 @@
 {
- "note": "Game functions rewritten as readable C in native/ (phase 9). The generator emits no body for them; tests/recomp_diff.c compares each against the MIPS interpreter on its ABI-visible state.",
+ "note": "Game functions rewritten as readable C in native/ (phase 9). The generator emits no body for them; tests/recomp_diff.c compares each against the MIPS interpreter on its ABI-visible state. \"returns\": void functions leave v0 and f0-f3 as scratch.",
  "functions": [
-  {"addr": "0x80038534", "name": "stick_x", "file": "native/controls.c"},
-  {"addr": "0x800388b0", "name": "stick_y", "file": "native/controls.c"}
+  {
+   "addr": "0x80038534",
+   "name": "stick_x",
+   "file": "native/controls.c",
+   "returns": "int"
+  },
+  {
+   "addr": "0x800388b0",
+   "name": "stick_y",
+   "file": "native/controls.c",
+   "returns": "int"
+  },
+  {
+   "addr": "0x80030fc8",
+   "name": "target_speed",
+   "file": "native/kart.c",
+   "returns": "void"
+  }
  ]
 }
