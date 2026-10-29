@@ -88,7 +88,10 @@ BANKS = [
     ("bank_0x729a30", 0x729A30, "FUN_80099000/80099aec/80099ec4: (addr & 0xffffff) + 0x729a30",
      [{"rom": "0x12aae4", "where": "common_data", "stride": "0x28",
        "what": "menu/HUD texture descriptors; reference 324 of the 325 MIO0 blocks"}]),
-    ("bank_0x7fa3c0", 0x7FA3C0, "FUN_80099088: (addr & 0xffffff) + 0x7fa3c0", []),
+    ("bank_0x7fa3c0", 0x7FA3C0, "FUN_80099088: (addr & 0xffffff) + 0x7fa3c0",
+     [{"where": "descriptors", "what": "FUN_8009a238/800996bc: address at +4, size at +0x10, then decoded by "
+       "FUN_800405d0; bank holds the ROM's only 63 TKMK00 images (menu-title sizes such as 220x32) "
+       "plus 2 MIO0 blocks"}]),
 ]
 
 
@@ -180,10 +183,23 @@ def main():
         if inside:
             r["mio0_blocks"] = len(inside)
             r["mio0_bytes"] = hex(sum(b[2] for b in inside))
+    tkmk = []
+    i = rom.find(b"TKMK00")
+    while i != -1:
+        tkmk.append(i)
+        i = rom.find(b"TKMK00", i + 1)
+    for r in filled:
+        s, e = int(r["rom_start"], 16), int(r["rom_end"], 16)
+        n = sum(1 for t in tkmk if s <= t < e)
+        if n:
+            r["tkmk00_images"] = n
     stray = [b for b in blocks if not any(int(r["rom_start"], 16) <= b[0] < int(r["rom_end"], 16)
                                           and r["kind"] != "unknown" for r in filled)]
 
-    json.dump({"rom_sha1": SHA1, "rom_size": hex(len(rom)), "regions": filled},
+    save = {"type": "EEPROM 4Kbit", "bytes": 512,
+            "evidence": "FUN_800d0050 (write, PIF cmd 0a 01 05 in FUN_800d41c0) and FUN_800d0190 "
+                        "(read, cmd 02 08 04 in FUN_800d7890) only accept block < 0x41; 8-byte blocks"}
+    json.dump({"rom_sha1": SHA1, "rom_size": hex(len(rom)), "save": save, "regions": filled},
               open(OUT, "w", encoding="utf-8"), indent=1)
 
     size = len(rom)

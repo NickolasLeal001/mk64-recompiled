@@ -77,7 +77,15 @@ src/           main, carregamento da ROM, janela, config
 
 ---
 
-## Fase 1 — Mapa completo da ROM (1–2 semanas) — 🔶 em andamento
+## Fase 1 — Mapa completo da ROM (1–2 semanas) — ✅ concluída em 2026-10-28 (com resíduos registrados)
+
+> **Fechamento:**
+> - Save: **EEPROM 4 Kbit** (512 bytes, blocos de 8). Escrita `FUN_800d0050` (cmd PIF `0A 01 05`), leitura `FUN_800d0190` (cmd `02 08 04`).
+> - Banco `0x7fa3c0`: as **63 imagens TKMK00** da ROM (segundo formato de compressão, decodificado por `FUN_800405d0`) + 2 MIO0. O port precisa de um decodificador TKMK00.
+> - **Resíduos aceitos**, a resolver quando o código que os usa for recompilado (Fase 2/3):
+>   - 17 blocos MIO0 do banco `0x641f70` sem referência achada;
+>   - parte da área crua `0x6a0aba–0x712dc0`;
+>   - o conteúdo cru dos 8 blocos por personagem além da paleta.
 
 > **Feito (2026-10-28):**
 > - `tools/build_rom_map.py` gera `analysis/rom_map.json` a partir da ROM: 81 regiões, 100% da ROM, sem sobreposição. O mapa é em JSON, sem dependências externas.

@@ -1,6 +1,11 @@
 {
  "rom_sha1": "579c48e211ae952530ffc8738709f078d5dd215e",
  "rom_size": "0xc00000",
+ "save": {
+  "type": "EEPROM 4Kbit",
+  "bytes": 512,
+  "evidence": "FUN_800d0050 (write, PIF cmd 0a 01 05 in FUN_800d41c0) and FUN_800d0190 (read, cmd 02 08 04 in FUN_800d7890) only accept block < 0x41; 8-byte blocks"
+ },
  "regions": [
   {
    "name": "header",
@@ -156,9 +161,15 @@
    "rom_end": "0x8284d0",
    "evidence": "FUN_80099088: (addr & 0xffffff) + 0x7fa3c0",
    "end_evidence": "next literal region course00_data starts here",
-   "index": [],
+   "index": [
+    {
+     "where": "descriptors",
+     "what": "FUN_8009a238/800996bc: address at +4, size at +0x10, then decoded by FUN_800405d0; bank holds the ROM's only 63 TKMK00 images (menu-title sizes such as 220x32) plus 2 MIO0 blocks"
+    }
+   ],
    "mio0_blocks": 2,
-   "mio0_bytes": "0x67b0"
+   "mio0_bytes": "0x67b0",
+   "tkmk00_images": 63
   },
   {
    "name": "course00_data",
