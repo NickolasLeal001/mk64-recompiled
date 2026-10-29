@@ -110,3 +110,75 @@ void func_80030FC8(uint8_t *ram, Ctx *ctx) {
     ctx->r[29] = SX32(sp);
     ctx->r[31] = SX32(ra);
 }
+
+// --- Steering wheel rate (FUN_80033884, FUN_80033a40, FUN_80033850) --------------------------
+// The steering does not jump to the stick: each call moves it one step towards its target, and the
+// step itself shrinks by 2048 per call (never below zero nor below the caller's minimum), so the
+// wheel turns fast at first and settles gently. Nothing moves while the remaining difference is
+// within the caller's threshold. +0x90 is a steering drag, kept at zero or below.
+#define PLAYER_STEER_DRAG 0x90   // f32, <= 0
+#define PLAYER_STEER_STEP 0x200  // s32: how far the steering moves per call
+#define STEP_DECAY 2048
+
+static int32_t s32_at(uint8_t *ram, uint32_t addr) { return (int32_t)mem_r32(ram, addr); }
+
+// Moves *steer one step towards target. Returns 0 when the difference is within the threshold.
+static int steer_step(uint8_t *ram, uint32_t player, uint32_t difference, uint32_t steer, int32_t target,
+                      int32_t threshold, int32_t min_step) {
+    int32_t diff = s32_at(ram, difference);
+    if (diff < threshold && -threshold < diff) return 0;
+    int32_t step = s32_at(ram, player + PLAYER_STEER_STEP);
+    int32_t smaller = (int32_t)((uint32_t)step - STEP_DECAY);
+    if ((uint32_t)smaller < 0xF0000000u) step = smaller;  // unless it wrapped below zero
+    if (!(min_step < step)) step = min_step;
+    mem_w32(ram, player + PLAYER_STEER_STEP, (uint32_t)step);
+    int32_t now = s32_at(ram, steer);
+    mem_w32(ram, steer, (uint32_t)(target < now ? now - step : now + step));
+    return 1;
+}
+
+static void add_steer_drag(uint8_t *ram, Ctx *ctx, uint32_t player, float amount) {
+    float drag = fnan_s(f32_at(ram, player + PLAYER_STEER_DRAG) + amount);
+    f32_put(ram, player + PLAYER_STEER_DRAG, drag);
+    drag = f32_at(ram, player + PLAYER_STEER_DRAG);
+    fcond_set(ctx, 0.0f <= drag);
+    if (0.0f <= drag) f32_put(ram, player + PLAYER_STEER_DRAG, 0.0f);
+}
+
+// void FUN_80033850(Player *player, float amount): drag += amount, kept at zero or below.
+void func_80033850(uint8_t *ram, Ctx *ctx) {
+    uint32_t bits = (uint32_t)ctx->r[5];
+    float amount;
+    memcpy(&amount, &bits, 4);
+    ctx->f[12] = bits;  // the original moves the argument into f12
+    add_steer_drag(ram, ctx, (uint32_t)ctx->r[4], amount);
+}
+
+// void FUN_80033884(Player *player, s32 *difference, s32 *steer, s32 target, s32 threshold,
+//                   s32 min_step, s32 drag_limit): one step, then the drag is held at -drag_limit
+//                   once it rises above drag_limit.
+void func_80033884(uint8_t *ram, Ctx *ctx) {
+    uint32_t player = (uint32_t)ctx->r[4], sp = (uint32_t)ctx->r[29];
+    if (!steer_step(ram, player, (uint32_t)ctx->r[5], (uint32_t)ctx->r[6], (int32_t)ctx->r[7], s32_at(ram, sp + 16),
+                    s32_at(ram, sp + 20)))
+        return;
+    int32_t limit = s32_at(ram, sp + 24);
+    float drag = f32_at(ram, player + PLAYER_STEER_DRAG);
+    fcond_set(ctx, drag < (float)limit);
+    if (drag < (float)limit) f32_put(ram, player + PLAYER_STEER_DRAG, (float)(int32_t)(0u - (uint32_t)limit));
+}
+
+// void FUN_80033a40(Player *player, s32 *difference, s32 *steer, s32 target, s32 threshold,
+//                   s32 min_step, float drag): one step, then the drag is added.
+void func_80033A40(uint8_t *ram, Ctx *ctx) {
+    uint32_t player = (uint32_t)ctx->r[4], sp = (uint32_t)ctx->r[29];
+    mem_w32(ram, sp - 24 + 20, (uint32_t)ctx->r[31]);  // its stack frame keeps the return address
+    if (!steer_step(ram, player, (uint32_t)ctx->r[5], (uint32_t)ctx->r[6], (int32_t)ctx->r[7], s32_at(ram, sp + 16),
+                    s32_at(ram, sp + 20)))
+        return;
+    uint32_t bits = mem_r32(ram, sp + 24);
+    float amount;
+    memcpy(&amount, &bits, 4);
+    ctx->f[12] = bits;
+    add_steer_drag(ram, ctx, player, amount);
+}

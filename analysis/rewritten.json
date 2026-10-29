@@ -18,6 +18,24 @@
    "name": "target_speed",
    "file": "native/kart.c",
    "returns": "void"
+  },
+  {
+   "addr": "0x80033850",
+   "name": "add_steer_drag",
+   "file": "native/kart.c",
+   "returns": "void"
+  },
+  {
+   "addr": "0x80033884",
+   "name": "steer_step_with_limit",
+   "file": "native/kart.c",
+   "returns": "void"
+  },
+  {
+   "addr": "0x80033a40",
+   "name": "steer_step_with_drag",
+   "file": "native/kart.c",
+   "returns": "void"
   }
  ]
 }
