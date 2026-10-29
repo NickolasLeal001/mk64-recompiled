@@ -389,7 +389,8 @@ Para cada sistema já entendido (controle → esterço → aceleração → drif
 >     - O `osContInit` substituído passou a preencher `__osMaxControllers` (`0x80196541`). Sem isso, o Pfs montava comandos para nenhum controle.
 >     - No Time Trials sumiu o aviso "NO N64 CONTROLLER PAK". "SAVE GHOST" (confirmado com START) cria a nota do MK64, grava o fantasma no arquivo 1 e depois avisa "THIS GHOST IS ALREADY SAVED". Numa sessão nova, a seleção de pista mostra a etiqueta GHOST lida do pak.
 >     - O jogo recusa salvar fantasmas pilotados pela IA (`0x80162dd4` = 1). O replay `tt_fantasma_pak` zera esse aviso com `MK64_POKE` e confere o SHA-1 do pak (`check_pak`).
-> - **Falta:** Na tela larga, objetos que o próprio jogo descarta fora do campo de visão de 4:3 podem surgir tarde nas laterais. Na interpolação, partículas que nascem ou somem no quadro não são interpoladas.
+> - **Conferido (2026-10-29):** a tela larga não mostra objetos surgindo tarde nas laterais. Foram 34 quadros em 16:9, ao longo de uma volta do Luigi Raceway e do começo do Koopa Troopa Beach e do Bowser's Castle, com pista e cenário completos até as bordas. O teste de visão dos karts (`FUN_8001fb0c`) usa meio-ângulo de ±58° com 1 jogador, mais largo que a imagem 16:9.
+> - **Falta:** na interpolação, partículas que nascem ou somem no quadro não são interpoladas.
 
 - Resolução livre e widescreen: corrigir o FOV, que hoje é ~58°/~68°/~45° conforme o número de telas.
 - Remapeamento de controle e suporte a teclado.
