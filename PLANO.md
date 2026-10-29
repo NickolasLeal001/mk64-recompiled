@@ -251,7 +251,27 @@ Substitui o sistema operacional e o hardware do N64:
 
 ---
 
-## Fase 5 — Gráficos: F3DEX/F3DLX 0.95 + RDP (6–10 semanas)
+## Fase 5 — Gráficos: F3DEX/F3DLX 0.95 + RDP (6–10 semanas) — ✅ concluída em 2026-10-28
+
+> **Decisão:** renderizador escrito do zero, em software, na resolução nativa (320×240), desenhando no framebuffer RGBA16 da própria RDRAM. Dá controle exato da semântica do RDP e permite conferir cada quadro em imagem. A GPU fica para a fase 10.
+> - `gfx/rsp.c`:
+>   - display lists GBI1 (F3DEX detectado pelo `G_VTX`), segmentos, pilha de matrizes;
+>   - luz direcional e ambiente, environment mapping, neblina;
+>   - recorte no near plane, culling;
+>   - `SETTIMG/CIMG/ZIMG` com segmento resolvido.
+> - `gfx/rdp.c`:
+>   - TMEM com `LOADBLOCK`/`LOADTILE`/`LOADTLUT`;
+>   - formatos RGBA16/32, CI4/8, IA4/8/16, I4/8; clamp/mirror/mask;
+>   - combiner 2 ciclos, blender, Z, texrect, fill.
+> - **Bugs achados olhando os quadros:**
+>   - textura de pista como ruído: segmento não resolvido no `SETTIMG`;
+>   - logo do título embaralhado: passo de linha errado em RGBA32.
+> - **Resultado:** logo da Nintendo, tela de título idêntica à original, menus completos (GAME/PLAYER/MAP SELECT), apresentação da pista e corrida no Luigi Raceway com HUD. **30 quadros/s na corrida**, a taxa do jogo.
+> - **Não feito:** comparação lado a lado com um emulador de referência (nenhum instalado). As capturas foram conferidas visualmente.
+> - **Ferramentas:**
+>   - `MK64_INPUT="de-ate:BOTOES;..."` (entrada roteirizada);
+>   - `MK64_SHOTS=n[:de[:ate]]` (capturas BMP);
+>   - `MK64_TRACE=n` (display list em `dl_trace.txt`).
 
 1. Interpretar as display lists F3DEX:
    - matrizes, vértices, triângulos, geometria (luz, névoa, culling);

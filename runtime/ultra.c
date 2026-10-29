@@ -243,6 +243,12 @@ static void scheduler(void) {
             if (now > next_vi + 0.25) next_vi = now + VI_PERIOD;  // do not try to catch up after a stall
             ultra_stats.retraces++;
             vi_counter++;
+            if (ultra_stats.retraces % 300 == 0) {
+                static uint64_t last_gfx;
+                ultra_log("retrace %llu: %.1f quadros/s", (unsigned long long)ultra_stats.retraces,
+                          (double)(ultra_stats.gfx_tasks - last_gfx) / (300.0 / 59.94));
+                last_gfx = ultra_stats.gfx_tasks;
+            }
             if (g_vi_queue && vi_counter % g_vi_retrace == 0) send_mesg(g_vi_queue, g_vi_msg, 0);
             if (g_host.on_retrace && !g_host.on_retrace(g_host.user)) exit(0);
         }

@@ -34,6 +34,42 @@ static int8_t axis_to_stick(Sint16 v) {
     return (int8_t)(s > STICK_MAX ? STICK_MAX : s < -STICK_MAX ? -STICK_MAX : s);
 }
 
+// MK64_INPUT="700-706:START;800-804:A;1200-1300:A+UP": buttons held during retrace ranges, on top
+// of the keyboard and gamepad (used for automated runs and replays).
+static uint16_t scripted_buttons(int *x, int *y) {
+    const char *spec = SDL_getenv("MK64_INPUT");
+    if (!spec) return 0;
+    uint64_t now = ultra_stats.retraces;
+    uint16_t b = 0;
+    static const struct { const char *name; uint16_t bit; } names[] = {
+        {"START", N64_START}, {"A", N64_A}, {"B", N64_B}, {"Z", N64_Z}, {"L", N64_L}, {"R", N64_R},
+        {"DU", N64_DU}, {"DD", N64_DD}, {"DL", N64_DL}, {"DR", N64_DR},
+        {"CU", N64_CU}, {"CD", N64_CD}, {"CL", N64_CL}, {"CR", N64_CR}};
+    const char *p = spec;
+    while (*p) {
+        unsigned long from = SDL_strtoul(p, (char **)&p, 10), to = from;
+        if (*p == '-') to = SDL_strtoul(p + 1, (char **)&p, 10);
+        if (*p == ':') p++;
+        int active = now >= from && now <= to;
+        while (*p && *p != ';') {
+            const char *end = p;
+            while (*end && *end != '+' && *end != ';') end++;
+            size_t len = (size_t)(end - p);
+            if (active) {
+                if (len == 2 && !SDL_strncmp(p, "UP", 2)) *y = STICK_MAX;
+                else if (len == 4 && !SDL_strncmp(p, "DOWN", 4)) *y = -STICK_MAX;
+                else if (len == 4 && !SDL_strncmp(p, "LEFT", 4)) *x = -STICK_MAX;
+                else if (len == 5 && !SDL_strncmp(p, "RIGHT", 5)) *x = STICK_MAX;
+                for (size_t k = 0; k < SDL_arraysize(names); k++)
+                    if (SDL_strlen(names[k].name) == len && !SDL_strncmp(p, names[k].name, len)) b |= names[k].bit;
+            }
+            p = *end == '+' ? end + 1 : end;
+        }
+        if (*p == ';') p++;
+    }
+    return b;
+}
+
 void input_update(void) {
     open_first_gamepad();
     const bool *k = SDL_GetKeyboardState(NULL);
@@ -81,6 +117,7 @@ void input_update(void) {
         if (gx) x = gx;
         if (gy) y = gy;
     }
+    b |= scripted_buttons(&x, &y);
     ultra_pads[0].buttons = b;
     ultra_pads[0].stick_x = (int8_t)x;
     ultra_pads[0].stick_y = (int8_t)y;
