@@ -259,7 +259,8 @@ def fmt_insn(i):
         return f"{o} {g[i.rd]}"
     if o in ("mthi", "mtlo"):
         return f"{o} {g[i.rs]}"
-    if o in ("mult", "multu", "div", "divu", "dmult", "dmultu", "ddiv", "ddivu") or o.startswith("t"):
+    if o in ("mult", "multu", "div", "divu", "dmult", "dmultu", "ddiv", "ddivu") or (
+            i.kind == "misc" and o.startswith("t")):
         return f"{o} {g[i.rs]}, {g[i.rt]}"
     if o in ("mfc1", "mtc1", "dmfc1", "dmtc1", "cfc1", "ctc1"):
         return f"{o} {g[i.rt]}, f{i.fs}"

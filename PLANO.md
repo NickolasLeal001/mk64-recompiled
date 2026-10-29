@@ -174,7 +174,24 @@ Meta: cada byte da ROM classificado como código, dados, asset comprimido, áudi
 
 ---
 
-## Fase 3 — Recompilador estático MIPS → C (4–8 semanas)
+## Fase 3 — Recompilador estático MIPS → C (4–8 semanas) — ✅ concluída em 2026-10-28
+
+> - `tools/recomp/recomp.py` gera C a partir de `functions.json`: 3.098 funções em 21 arquivos (~23 MB).
+>   - Registradores em `Ctx` (GPR de 64 bits, FPU FR=0).
+>   - RDRAM em palavras nativas (byte XOR 3, half XOR 2).
+>   - Delay slots, inclusive branches "likely" e alvos que caem dentro de um delay slot.
+>   - `switch` pelas tabelas de salto, `jal` como chamada direta, `jalr` pela tabela endereço→função.
+> - Semântica conferida contra o R4300:
+>   - link (`ra`) escrito antes do delay slot;
+>   - divisão por zero com o resultado do hardware;
+>   - `cvt` honrando o modo de arredondamento do `fcr31`;
+>   - NaN padrão do MIPS (`0x7FBFFFFF` / `0x7FF7FFFFFFFFFFFF`) em vez do NaN do x86.
+> - `runtime/recomp.h` e `runtime/recomp_ops.c`: semântica compartilhada. `build.bat` regenera tudo com `MK64_ROM` definido. MSVC compila tudo sem avisos.
+> - **Validação:** `tests/interp.c` é um interpretador MIPS independente. `tests/recomp_diff.c` roda cada função do jogo nos dois a partir de estados aleatórios e compara registradores + 8 MB de RDRAM.
+>   - Resultado: **2.500/2.500 funções idênticas em 19.855 execuções**.
+>   - 408 funções não são testáveis com estado aleatório (sempre saem da RDRAM, entram em laço ou dependem da libultra); ficam para os replays da fase 7.
+>   - Três problemas reais achados e corrigidos pelo teste: ordem do link, NaN e (no próprio teste) código sobrescrito pelos dados aleatórios.
+>   - Uso: `build\recomp_diff.exe <rom> [tentativas] [endereco] [h=hibrido o=so-essa]`.
 
 Ferramenta própria em `tools/recomp/` (Python). Entrada: ROM, `rom_map.yaml` e `functions.yaml`. Saída: arquivos `.c`.
 
