@@ -91,6 +91,15 @@ static inline void op_swr(uint8_t *rdram, uint32_t a, uint64_t rt) {
 }
 
 // --- integer helpers ----------------------------------------------------------------------------
+// Function entry hook of the generated code: a call count per function when built with
+// RECOMP_PROFILE (MK64_PROFILE=a,b then logs the functions called in retraces [a, b)).
+#ifdef RECOMP_PROFILE
+void recomp_enter(uint32_t addr);
+#define RECOMP_ENTER(a) recomp_enter(a)
+#else
+#define RECOMP_ENTER(a) ((void)0)
+#endif
+
 #define SX32(v) ((uint64_t)(int64_t)(int32_t)(uint32_t)(v))
 
 static inline void op_mult(Ctx *c, uint64_t a, uint64_t b) {

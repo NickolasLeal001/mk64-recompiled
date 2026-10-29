@@ -269,6 +269,7 @@ class FuncGen:
     def emit(self):
         self.collect_labels()
         out = [f"void {self.known[self.start]}(uint8_t *rdram, Ctx *ctx) {{"]
+        out.append(f"    RECOMP_ENTER(0x{self.start:08X}u);")
         a = self.start
         while a < self.end:
             i = self.insns[a]

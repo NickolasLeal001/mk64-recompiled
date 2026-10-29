@@ -308,7 +308,13 @@ static int on_retrace(void *user) {
         float progress;
         SDL_memcpy(&progress, &pbits, 4);
         int near_end = progress >= 2.97f && progress < 4.0f;
-        if (driving && near_end) {
+        // The lap counter (0x80164390) is -1 until the race is under way. Taking over earlier
+        // can leave no human player when the start is set up, and then no Lakitu comes to count
+        // down: player 1 only accelerates until then.
+        int32_t laps = (int32_t)mem_r32(app->rdram, 0x80164390u);
+        if (laps < 0 && !(flags & 0x0800)) {
+            ultra_pads[0].buttons |= 0x8000;
+        } else if (driving && near_end) {
             mem_w16(app->rdram, 0x800F6990u, (uint16_t)((flags & ~0x1000) | 0x4000));
             driving = 0;
             ultra_pads[0].buttons |= 0x8000;
@@ -321,19 +327,19 @@ static int on_retrace(void *user) {
             mem_w16(app->rdram, 0x800F6990u, (uint16_t)((flags & ~0x1000) | 0x4000));
             driving = 0;
         }
-        // Race over: open the post-race menu with START, then take its first option with A. The
-        // finished flag outlives the race by a few frames; the lap counter (0x80164390, -1 while
-        // the next race is set up) keeps a late START from pausing the next start for good.
-        int32_t laps = (int32_t)mem_r32(app->rdram, 0x80164390u);
-        if ((flags & 0x0800) && laps >= 3 && !SDL_getenv("MK64_AUTOPILOT_MANUAL")) {
+        // Race over: open the post-race menu with START, then take its first option with A.
+        if ((flags & 0x0800) && !SDL_getenv("MK64_AUTOPILOT_MANUAL")) {
             uint64_t phase = n % 120;
             if (phase < 4) ultra_pads[0].buttons |= 0x1000;              // START
             else if (phase >= 60 && phase < 64) ultra_pads[0].buttons |= 0x8000;  // A
         }
     }
-    // MK64_DUMPRAM=n: write RDRAM in N64 byte order to ram_<n>.bin (debugging and analysis).
+    // MK64_DUMPRAM=n[,n...]: write RDRAM in N64 byte order to ram_<n>.bin (debugging and analysis).
     const char *dump = SDL_getenv("MK64_DUMPRAM");
-    if (dump && n == (uint64_t)SDL_atoi(dump)) {
+    int dump_now = 0;
+    for (const char *d = dump; d && *d; d = SDL_strchr(d, ',') ? SDL_strchr(d, ',') + 1 : "")
+        dump_now |= n == (uint64_t)SDL_atoi(d);
+    if (dump_now) {
         char name[64];
         SDL_snprintf(name, sizeof name, "ram_%llu.bin", (unsigned long long)n);
         FILE *f = fopen(name, "wb");

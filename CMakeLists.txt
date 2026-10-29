@@ -8,6 +8,12 @@ if(MSVC)
   add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
 endif()
 
+# -DMK64_PROFILE=ON: count calls of every recompiled function (see RECOMP_ENTER in recomp.h).
+option(MK64_PROFILE "Per-function call counts" OFF)
+if(MK64_PROFILE)
+  add_compile_definitions(RECOMP_PROFILE)
+endif()
+
 include(FetchContent)
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)

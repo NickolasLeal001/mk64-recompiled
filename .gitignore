@@ -14,3 +14,4 @@ __pycache__/
 # Screenshots of the game contain its art: keep them local
 fase5-*.png
 shots/
+build_prof/

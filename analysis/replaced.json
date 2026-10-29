@@ -20,7 +20,7 @@
   {"addr": "0x800cdd60", "name": "osSpTaskYielded", "evidence": "reads SP status yield bits"},
   {"addr": "0x800cdc30", "name": "osPiStartDma", "evidence": "7 arguments; ROM -> RAM copies"},
   {"addr": "0x800cdb80", "name": "osInvalDCache", "evidence": "(ram, size) before DMA"},
-  {"addr": "0x800cda60", "name": "osInvalICache", "evidence": "code segment range before load"},
+  {"addr": "0x800cda60", "name": "bzero", "evidence": "stores zeros (8 words per loop); clears segments before load and the object list at race start"},
   {"addr": "0x800cdb00", "name": "osWritebackDCache", "evidence": "code segment range after load"},
   {"addr": "0x800cd890", "name": "osWritebackDCacheAll", "evidence": "cache op over 0x80000000-0x80001ff0"},
   {"addr": "0x800d1ab0", "name": "__osDisableInt", "evidence": "mfc0 Status; clear IE; return old IE"},

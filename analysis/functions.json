@@ -39269,7 +39269,7 @@
    "unresolved_jr": [],
    "calls": [],
    "library": "libultra",
-   "name": "osInvalICache"
+   "name": "bzero"
   },
   {
    "addr": "0x800cdb00",

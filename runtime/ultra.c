@@ -225,6 +225,38 @@ static void eeprom_load(void) {
     ultra_log("EEPROM: %zu bytes from %s", got, g_eeprom_path);
 }
 
+#ifdef RECOMP_PROFILE
+static uint32_t g_calls[0x100000 / 4];  // per function, code below 0x80100000
+static uint32_t g_first[0x100000 / 4];  // retrace of its first call in the window
+void recomp_enter(uint32_t addr) {
+    uint32_t k = (addr - 0x80000000u) / 4;
+    if (k >= sizeof g_calls / sizeof g_calls[0]) return;
+    if (!g_calls[k]++) g_first[k] = (uint32_t)ultra_stats.retraces;
+}
+
+// MK64_PROFILE=a,b: write the functions called during retraces [a, b) to prof_a_b.txt.
+static void profile_retrace(void) {
+    static long from = -2, to;
+    if (from == -2) {
+        const char *e = getenv("MK64_PROFILE");
+        from = e ? atol(e) : -1;
+        to = e && strchr(e, ',') ? atol(strchr(e, ',') + 1) : 0;
+    }
+    if (from < 0) return;
+    if (ultra_stats.retraces == (uint64_t)from) {
+        memset(g_calls, 0, sizeof g_calls);
+        memset(g_first, 0, sizeof g_first);
+    }
+    if (ultra_stats.retraces != (uint64_t)to) return;
+    char name[64];
+    snprintf(name, sizeof name, "prof_%ld_%ld.txt", from, to);
+    FILE *f = fopen(name, "w");
+    for (uint32_t k = 0; f && k < sizeof g_calls / sizeof g_calls[0]; k++)
+        if (g_calls[k]) fprintf(f, "%08x %u %u\n", 0x80000000u + 4 * k, g_calls[k], g_first[k]);
+    if (f) fclose(f);
+}
+#endif
+
 // ---------------------------------------------------------------------------------------------
 // Scheduler (host fiber)
 static NThread *pick_ready(void) {
@@ -262,6 +294,21 @@ static void scheduler(void) {
             next_vi += VI_PERIOD;
             if (now > next_vi + 0.25) next_vi = now + VI_PERIOD;  // do not try to catch up after a stall
             ultra_stats.retraces++;
+#ifdef RECOMP_PROFILE
+            profile_retrace();
+#endif
+            {
+                // MK64_THREADDUMP=n: log every game thread's state at retrace n (debugging hangs).
+                static long dump_at = -2;
+                if (dump_at == -2) dump_at = getenv("MK64_THREADDUMP") ? atol(getenv("MK64_THREADDUMP")) : -1;
+                if (dump_at >= 0 && ultra_stats.retraces == (uint64_t)dump_at)
+                    for (int k = 0; k < g_thread_count; k++) {
+                        NThread *t = &g_threads[k];
+                        ultra_log("thread %d entry=0x%08x pri=%d state=%d queue=0x%08x (%u/%u msgs)", t->id, t->entry,
+                                  t->pri, t->state, t->wait_queue, t->wait_queue ? RD32(t->wait_queue + MQ_VALID) : 0,
+                                  t->wait_queue ? RD32(t->wait_queue + MQ_COUNT) : 0);
+                    }
+            }
             vi_counter++;
             if (ultra_stats.retraces % 300 == 0) {
                 static uint64_t last_gfx;
@@ -462,7 +509,14 @@ void func_800CDC30(uint8_t *rdram, Ctx *ctx) {  // osPiStartDma(mb, pri, dir, de
 
 // Caches do not exist here.
 void func_800CDB80(uint8_t *rdram, Ctx *ctx) { (void)rdram; (void)ctx; }  // osInvalDCache
-void func_800CDA60(uint8_t *rdram, Ctx *ctx) { (void)rdram; (void)ctx; }  // osInvalICache
+// bzero(ptr, size). Once taken for osInvalICache (it runs before code segments are loaded), but
+// its body stores zeros, and the game relies on it, e.g. to empty the object list at each race
+// start (0x80165c18, 0x1e140 bytes): without it the 550 slots ran out on the 5th start.
+void func_800CDA60(uint8_t *rdram, Ctx *ctx) {
+    uint32_t p = ARG(ctx, 0), n = ARG(ctx, 1);
+    if ((int32_t)n <= 0) return;
+    for (uint32_t k = 0; k < n; k++) mem_w8(rdram, p + k, 0);
+}
 void func_800CDB00(uint8_t *rdram, Ctx *ctx) { (void)rdram; (void)ctx; }  // osWritebackDCache
 void func_800CD890(uint8_t *rdram, Ctx *ctx) { (void)rdram; (void)ctx; }  // osWritebackDCacheAll
 
