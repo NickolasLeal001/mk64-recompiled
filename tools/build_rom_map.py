@@ -79,12 +79,27 @@ BANKS = [
       {"vram": "0x800ddeb0", "where": "main", "entries": 8, "what": "per-character u16 frame DMA size"}]),
     ("bank_0x641f70", 0x641F70, "FUN_8006ed94/802a84f4/802a85cc: (addr & 0xffffff) + 0x641f70, "
      "decompressed into the heap",
-     [{"vram": "0x800e54d0", "where": "main", "entries": 20, "what": "one MIO0 per course"}]),
+     [{"vram": "0x800e54d0", "where": "main", "entries": 20,
+       "what": "one MIO0 per course, sizes at 0x800e5520 (FUN_8006ef60 -> FUN_8006ed94)"},
+      {"where": "course seg9", "what": "per-course texture lists, 16-byte entries "
+       "{addr, comp size, size, ?}; 280 distinct textures, all match MIO0 blocks (FUN_802aa7c8)"},
+      {"where": "code", "what": "123 literal FUN_802a84f4 calls + FUN_8006ed94(0x0f0d7510, ...); "
+       "401 of 418 MIO0 blocks referenced in total"}]),
     ("bank_0x729a30", 0x729A30, "FUN_80099000/80099aec/80099ec4: (addr & 0xffffff) + 0x729a30",
      [{"rom": "0x12aae4", "where": "common_data", "stride": "0x28",
        "what": "menu/HUD texture descriptors; reference 324 of the 325 MIO0 blocks"}]),
     ("bank_0x7fa3c0", 0x7FA3C0, "FUN_80099088: (addr & 0xffffff) + 0x7fa3c0", []),
 ]
+
+
+# Course table entry (0x30 bytes), as consumed by FUN_802aa918:
+#  +0x00/+0x04 ROM range, MIO0, FUN_802aa88c decompresses it -> segment 6 (course data)
+#  +0x08/+0x0C ROM range, raw DMA by FUN_802a82e4 -> segment 0xF (vertices + packed display lists)
+#  +0x10/+0x14 ROM range, raw DMA by FUN_802a7d70 -> segment 9 (texture list)
+#  +0x18 seg addr / +0x1C count: vertices in seg F, expanded by FUN_802a87a8 -> segment 4
+#  +0x20 seg addr / +0x24 size / +0x2C u16: packed display lists in seg F, FUN_802a9af4 -> segment 7
+#  +0x28 seg addr: texture list in seg 9, loaded from bank 0x641f70 by FUN_802aa7c8 -> segment 5
+COURSE_RANGES = (("data", 0x0, 6), ("vtx_dl", 0x8, 0xF), ("textures", 0x10, 9))
 
 
 def course_regions(rom):
@@ -93,10 +108,17 @@ def course_regions(rom):
     for i in range(COURSE_COUNT):
         e = struct.unpack_from(">12I", rom, base + i * 0x30)
         src = f"course table 0x{COURSE_TABLE_VRAM:08x}[{i}] (FUN_802aa918)"
-        for name, (s, t) in (("geo", (e[0], e[1])), ("packed", (e[2], e[3])), ("seg9", (e[4], e[5]))):
+        for name, field, seg in COURSE_RANGES:
+            s, t = e[field // 4], e[field // 4 + 1]
             if s and t > s:
-                regions.append({"name": f"course{i:02d}_{name}", "kind": "course", "rom_start": hex(s),
-                                "rom_end": hex(t), "evidence": f"{src} +{(0, 8, 16)[('geo', 'packed', 'seg9').index(name)]:#x}"})
+                r = {"name": f"course{i:02d}_{name}", "kind": "course", "rom_start": hex(s), "rom_end": hex(t),
+                     "segment": seg, "evidence": f"{src} +{field:#x}"}
+                if name == "vtx_dl":
+                    r["vertices"] = {"seg_addr": hex(e[6]), "count": e[7]}
+                    r["display_lists"] = {"seg_addr": hex(e[8]), "size": hex(e[9]), "flag": hex(e[11] >> 16)}
+                if name == "textures":
+                    r["texture_list"] = hex(e[10])
+                regions.append(r)
     return regions
 
 

@@ -96,10 +96,24 @@ src/           main, carregamento da ROM, janela, config
 > | `0x641f70` | `0x800E54D0` (20, uma por pista) | 20/418 MIO0 |
 > | `0x729a30` (menus/HUD) | descritores de 0x28 B em `common_data` (ROM `0x12aae4`) | 324/325 MIO0 |
 >
+> - Pistas: as 3 faixas de cada entrada identificadas pelo carregador `FUN_802aa918` e gravadas na tabela de segmentos `0x80150258` (`FUN_802a7b94`):
+>
+> | Faixa | Segmento | Conteúdo |
+> |---|---|---|
+> | `data` | 6 | MIO0 com os dados da pista |
+> | `vtx_dl` | F | vértices MIO0 (expandidos para o seg 4) + display lists empacotadas (interpretadas para o seg 7) |
+> | `textures` | 9 | lista de texturas (para o seg 5) |
+>
+>   Conferência: o bloco MIO0 de vértices termina exatamente no offset das display lists (ex.: `0x96f4`).
+> - Banco `0x641f70`: 401/418 blocos referenciados.
+>   - 280 texturas distintas nas listas das pistas, todas batendo com blocos MIO0 e tamanhos.
+>   - 20 pela tabela `0x800E54D0`.
+>   - O resto vem de 123 chamadas literais de `FUN_802a84f4` e de `FUN_8006ed94`.
+>   - 7 constantes do código apontam para a área crua.
+>
 > **Falta:**
-> - Banco `0x641f70`: 398 blocos MIO0 e ~0x72306 bytes crus sem referência achada. [inf] São referenciados pelos dados das pistas (texturas).
+> - 17 blocos MIO0 do banco `0x641f70` sem referência achada, e o resto da área crua `0x6a0aba–0x712dc0`.
 > - Banco `0x7fa3c0`: conteúdo não identificado. Só 2 blocos MIO0 nos seus 0x2E110 bytes.
-> - Faixas das pistas: os nomes `geo`/`packed`/`seg9` continuam provisórios.
 > - Tipo de save (item 4).
 
 Meta: cada byte da ROM classificado como código, dados, asset comprimido, áudio ou tabela.
