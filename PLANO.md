@@ -371,6 +371,12 @@ Cada teste aponta para o ID de evidência REA que o justifica. Quando o port div
 > - **Mecanismo:** `analysis/rewritten.json` lista as funções reescritas à mão em `native/`. O gerador não emite corpo para elas, e `tests/recomp_diff.c` compara cada uma com o interpretador MIPS só no estado visível pela ABI o32 (v0, s0–s7/fp, sp, ra, f0/f2, f20–f31 e toda a RAM).
 > - **Primeiras reescritas:** leitura do analógico (`native/controls.c`: zona morta quadrada de ±12 subtraída na direção do stick e limite de ±53), substituindo `FUN_80038534` e `FUN_800388b0`.
 >   - Validação: 1.352 execuções idênticas cada contra o interpretador, testes de comportamento e replays inalterados.
+> - **Rodada 2 (2026-10-29), `native/kart.c`:**
+>   - **Aceleração** (`FUN_80030fc8`): a velocidade-alvo (+0x9C) sobe em 10 faixas de um décimo da velocidade máxima. Cada faixa soma o valor da tabela do personagem mais 0,05 por grau de inclinação; com impulso, multiplica pelo fator do personagem (2, 2, 3, 3, 1,5, 1,5, 3, 3). As faixas são conferidas em ordem, então um passo que cruza para a faixa seguinte soma de novo no mesmo quadro. Depois o alvo fica entre 0 e a máxima, e +0x8C recebe alvo²/25.
+>   - **Passos do esterço** (`FUN_80033850`, `FUN_80033884`, `FUN_80033a40`): o esterço anda um passo por chamada em direção ao alvo. O passo (+0x200) encolhe 2048 por chamada até um mínimo, nada se move dentro de ±limiar, e o arrasto (+0x90) fica em zero ou abaixo.
+>   - **Validação:** iguais ao interpretador em 1.189 a 3.359 execuções cada, e os 26 replays continuam idênticos. Esses replays rodam milhares de quadros de corrida, então qualquer diferença de arredondamento apareceria.
+>   - **Ferramentas:** o `rewritten.json` ganhou `"returns"`; funções `void` não comparam v0 nem f0–f3, que são lixo pela ABI. As reescritas reproduzem o quadro de pilha e o endereço de retorno das chamadas, que ficam na RAM comparada, e convertem NaN no NaN padrão do R4300 (`fnan_s`).
+>   - **Falta:** a função principal do esterço, `FUN_80033ae0`. Ela tem ~2.900 instruções e um quadro de pilha de 0x2A4 bytes com tabelas copiadas, e cobre drift, contra-esterço, ré e mini-turbo. Depois dela vêm o drift, os itens e a IA.
 
 Para cada sistema já entendido (controle → esterço → aceleração → drift → itens → IA):
 1. Escrever a função em C legível, com nomes reais e structs (`Player`, `Controller`).
