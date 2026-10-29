@@ -288,6 +288,16 @@ def main():
                 for k, a in enumerate(starts)]
         s.text_end = code_end(s, segs, (max(ends) + 15) & ~15)
 
+    # Data after the text can decode as jal (e.g. the word at 0x800e5530 reads as
+    # "jal 0x80002000", which is mid-function): keep only calls made from inside the text.
+    seeds = {s.vram: "segment entry" for s in segs}
+    for s in segs:
+        for i in s.insns:
+            if i.addr >= s.text_end:
+                break
+            if i.op == "jal" and seg_of(segs, i.target) and seg_of(segs, i.target).insn(i.target).op != "invalid":
+                seeds.setdefault(i.target, "jal")
+
     for s in segs:
         for use, val in find_constants(s):
             t = seg_of(segs, val)

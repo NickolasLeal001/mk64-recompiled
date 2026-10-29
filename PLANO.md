@@ -219,7 +219,21 @@ Ferramenta própria em `tools/recomp/` (Python). Entrada: ROM, `rom_map.yaml` e 
 
 ---
 
-## Fase 4 — Runtime nativo, a "libultra" do PC (4–6 semanas)
+## Fase 4 — Runtime nativo, a "libultra" do PC (4–6 semanas) — ✅ concluída em 2026-10-28
+
+> - **API usada:** o jogo chama 61 funções da libultra. 46 são substituídas nativamente (`analysis/replaced.json`, cada uma com a evidência da identificação). As puras (gu*, sinf/cosf, sprintf, bcopy, aritmética 64 bits) e as que só preenchem estruturas na RAM (`osCreateMesgQueue`, `osSetEventMesg`) continuam recompiladas.
+> - **`runtime/ultra.c`:**
+>   - cada thread do N64 é uma fibra do Windows; o escalonador por prioridade (FIFO entre iguais) nunca retoma a thread ociosa (prioridade 0);
+>   - filas de mensagem lidas e escritas na própria estrutura da RAM;
+>   - eventos via `__osEventStateTab` (`0x80196440`), VI a 59,94 Hz;
+>   - DMA da ROM, tarefas do RSP (por enquanto concluídas na hora, com SP e DP done);
+>   - relógio a 46,875 MHz, EEPROM em `mk64.eep`;
+>   - controles por teclado/SDL gamepad (`src/input.c`); Controller Pak relatado como ausente.
+> - **Correção achada no boot:** uma palavra de dados após o texto (`0x800e5530`) era lida como `jal 0x80002000` e partia uma função ao meio. Os `jal` agora só contam se estiverem dentro do texto.
+> - **Resultado:** o jogo cria suas 5 threads (ociosa, jogo, escalonador, áudio, controles), configura o áudio para **26.800 Hz** e entra no laço principal.
+>   - Em ~12 s: 699 retraces (60 Hz), **323 tarefas gráficas (~30/s)**, 683 tarefas de áudio, 1.289 DMAs (1,1 MB), framebuffer trocando.
+>   - Nenhum acesso de IO sem tratamento. Log em `mk64_runtime.log`; tela de status em `fase4-status.png`.
+> - Teste diferencial depois das mudanças: 2.469/2.469 funções idênticas.
 
 Substitui o sistema operacional e o hardware do N64:
 

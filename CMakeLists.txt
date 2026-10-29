@@ -3,6 +3,10 @@ project(mk64_port C)
 
 set(CMAKE_C_STANDARD 11)
 set(CMAKE_C_STANDARD_REQUIRED ON)
+if(MSVC)
+  # Portable C (fopen, strncat...) instead of the MSVC-only *_s variants.
+  add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+endif()
 
 include(FetchContent)
 set(SDL_SHARED OFF CACHE BOOL "" FORCE)
@@ -29,6 +33,14 @@ if(RECOMP_GENERATED)
     # Generated code: unreferenced labels (C4102) and constant conditions are expected.
     target_compile_options(recomp_game PRIVATE /bigobj /W3 /wd4102 /wd4127 /wd4146)
   endif()
+  # The game: recompiled code + native libultra runtime + SDL host.
+  add_executable(mk64 src/main.c src/input.c runtime/ultra.c runtime/io.c)
+  target_include_directories(mk64 PRIVATE runtime generated src)
+  target_link_libraries(mk64 PRIVATE recomp_game rom SDL3::SDL3-static)
+  if(MSVC)
+    target_compile_options(mk64 PRIVATE /W4)
+  endif()
+
   add_executable(recomp_link_check tests/recomp_link_check.c runtime/recomp_stubs.c)
   target_link_libraries(recomp_link_check PRIVATE recomp_game)
   add_executable(recomp_diff tests/recomp_diff.c tests/interp.c)
@@ -39,11 +51,8 @@ if(RECOMP_GENERATED)
   endif()
 endif()
 
-add_executable(mk64 src/main.c)
-target_link_libraries(mk64 PRIVATE rom SDL3::SDL3-static)
 if(MSVC)
   target_compile_options(rom PRIVATE /W4)
-  target_compile_options(mk64 PRIVATE /W4)
 endif()
 
 # Tests run without SDL so they work headless.

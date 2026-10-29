@@ -11,8 +11,9 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include "funcs.h"
 #include "interp.h"
-#include "recomp.h"
+#include "replaced_stubs.c.inc"  // runtime-replaced libultra functions escape like IO does
 #include "rom.h"
 
 extern const struct {
@@ -162,6 +163,9 @@ int main(int argc, char **argv) {
             any = 1;
             cb.r[31] = SX32(INTERP_RET_MAGIC);  // same ra the interpreter started with
             if (setjmp(g_escape)) {
+                // Calls into runtime-replaced libultra functions are not comparable: the
+                // interpreter ran the original MIPS while the recompiled code calls the runtime.
+                if (strstr(g_escape_why, "(runtime)")) { skip_reason[INTERP_UNSUPPORTED]++; continue; }
                 snprintf(why, sizeof why, "recomp escaped: %s at 0x%08x", g_escape_why, g_escape_pc);
                 bad = 1;
                 break;

@@ -1,7 +1,8 @@
 // Links every recompiled function and checks the address table is sorted and complete.
 #include <stdio.h>
 
-#include "recomp.h"
+#include "funcs.h"
+#include "replaced_stubs.c.inc"  // runtime-replaced libultra functions (not linked here)
 
 extern const struct {
     uint32_t addr;

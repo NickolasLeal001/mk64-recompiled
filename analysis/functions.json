@@ -473,20 +473,7 @@
   },
   {
    "addr": "0x80001fac",
-   "size": "0x54",
-   "segment": "main",
-   "seed": "jal",
-   "dead_tail": false,
-   "jump_tables": [],
-   "unresolved_jr": [],
-   "calls": [
-    "0x800cd750"
-   ],
-   "library": null
-  },
-  {
-   "addr": "0x80002000",
-   "size": "0xd8",
+   "size": "0x12c",
    "segment": "main",
    "seed": "jal",
    "dead_tail": false,
