@@ -141,7 +141,18 @@ Meta: cada byte da ROM classificado como código, dados, asset comprimido, áudi
 
 ---
 
-## Fase 2 — Inventário de código (2–3 semanas)
+## Fase 2 — Inventário de código (2–3 semanas) — ✅ concluída em 2026-10-28
+
+> - `tools/recomp/mips.py`: decodificador R4300 próprio. Comparado instrução a instrução com o Rizin (via REA, `ev_b94e4b28…`) em **253.318 instruções dentro de funções: zero divergências**.
+> - `tools/recomp/analyze.py` gera `analysis/functions.json`: **3.098 funções sem sobreposição**, cobrindo 100% do texto dos 3 segmentos.
+>   - Origem: 2.660 por `jal`, 45 por ponteiro (`lui`/`addiu`), 6 sub-rotinas `bal`, 1 tail call, 3 entradas de segmento e 383 sem referência (código morto ou alcançado por tabelas não lidas).
+>   - Contém todos os inícios do Ghidra (2.913) e do Rizin (2.741). Os 71 extras do Rizin são casos de `switch`.
+> - **251 tabelas de salto** resolvidas, com tamanho tirado do `sltiu` do `switch`. Restam 2 `jr` indiretos, ambos explicados:
+>   - `0x80040c8c`: retorno de sub-rotina `bal` do decodificador TKMK00 via registro salvo;
+>   - `0x800d1790`: handler de exceção da libultra.
+> - Fim do texto: main `0x800d8f70`, racing `0x802b8790`, seg3 `0x80284e40`. Logo após o texto do main há **código do RSP** (saltos para `0x84001xxx`), que não é recompilado.
+> - **libultra:** bloco `0x800cbf70–0x800d8f70` (190 funções), definido pelo grafo de chamadas (nada nele chama código abaixo). 14 funções identificadas com evidência em `analysis/libultra.json` (osPiStartDma, osRecvMesg, osEeprom*, __osException…).
+> - `tools/recomp/test_analysis.py`: testes de regressão.
 
 1. **ELF com os 3 segmentos de código**, cada um no seu endereço. Hoje o `mk64_us.elf` tem 2; acrescentar `0x80280000`.
 2. **Limites de função.**

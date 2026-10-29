@@ -1,0 +1,39 @@
+{
+ "block": {
+  "start": "0x800cbf70",
+  "end": "0x800d8f70",
+  "evidence": "lowest address from which no function calls code below it (tools/recomp/analyze.py call graph); libultra is linked last and never calls game code"
+ },
+ "identified": [
+  {"addr": "0x800cc0c0", "name": "osInitialize", "confidence": "inferred",
+   "evidence": "first call in ramMain (entry), before any thread is created"},
+  {"addr": "0x800cc360", "name": "osStartThread", "confidence": "inferred",
+   "evidence": "ramMain: FUN_80000450(thread 0x801524c0, 1, entry 0x800004e0, 0) then FUN_800cc360(0x801524c0)"},
+  {"addr": "0x800cd750", "name": "osRecvMesg", "confidence": "inferred",
+   "evidence": "called with (queue 0x8014ef58, &msg, 1 = OS_MESG_BLOCK) right after every DMA start"},
+  {"addr": "0x800cdc30", "name": "osPiStartDma", "confidence": "inferred",
+   "evidence": "7 arguments (iomsg, pri, dir, rom addr, ram addr, size, queue); ROM->RAM copies in FUN_80001158"},
+  {"addr": "0x800cdb80", "name": "osInvalDCache", "confidence": "inferred",
+   "evidence": "called with (ram, size) before each DMA into that buffer"},
+  {"addr": "0x800cda60", "name": "osInvalICache", "confidence": "inferred",
+   "evidence": "FUN_800010cc/8000105c: called with the code segment range before loading code"},
+  {"addr": "0x800cdb00", "name": "osWritebackDCache", "confidence": "inferred",
+   "evidence": "FUN_800010cc/8000105c: called with the code segment range after loading code"},
+  {"addr": "0x800ce140", "name": "sqrtf", "confidence": "inferred",
+   "evidence": "FUN_8002d268: FUN_800ce140(vx*vx + vz*vz)"},
+  {"addr": "0x800d0050", "name": "osEepromLongWrite", "confidence": "observed",
+   "evidence": "loops 8-byte blocks (address < 0x41) through FUN_800d4010, which builds PIF command 0a 01 05"},
+  {"addr": "0x800d0190", "name": "osEepromLongRead", "confidence": "observed",
+   "evidence": "loops 8-byte blocks (address < 0x41) through FUN_800d76a0, which builds PIF command 02 08 04"},
+  {"addr": "0x800d4010", "name": "osEepromWrite", "confidence": "observed", "evidence": "see osEepromLongWrite"},
+  {"addr": "0x800d76a0", "name": "osEepromRead", "confidence": "observed", "evidence": "see osEepromLongRead"},
+  {"addr": "0x800d11b0", "name": "__osExceptionPreamble", "confidence": "observed",
+   "evidence": "lui k0, 0x800d; addiu k0, 0x11c0; jr k0 -- stub copied to the exception vectors"},
+  {"addr": "0x800d11c0", "name": "__osException", "confidence": "observed",
+   "evidence": "target of the exception preamble"}
+ ],
+ "rsp_text": {
+  "vram": "0x800d8f70",
+  "evidence": "after the CPU text: j/jal to 0x84001xxx (SP IMEM) and mtc0 to RSP DMA registers; not CPU code"
+ }
+}
