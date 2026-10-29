@@ -10,3 +10,7 @@ build/
 generated/
 __pycache__/
 *.pyc
+
+# Screenshots of the game contain its art: keep them local
+fase5-*.png
+shots/
