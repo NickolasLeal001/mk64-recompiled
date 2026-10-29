@@ -271,6 +271,9 @@ Substitui o sistema operacional e o hardware do N64:
 > - **Correção (2026-10-29, relatada jogando: "o chão não está sendo renderizado"):** no Toad's Turnpike, no Choco Mountain e no Moo Moo Farm, a pista sumia.
 >   - Causa: o modo neblina + superfície opaca (`G_RM_FOG_SHADE_A` + `G_RM_AA_ZB_OPA_SURF2`) liga só o `ALPHA_CVG_SEL`. O RDP descartava pixels com alfa abaixo de 0,5 como se fosse `CVG_X_ALPHA`, e com neblina o alfa do sombreamento é o fator de neblina, perto de 0 junto à câmera. Um quadro do Toad's Turnpike perdia 113 mil pixels assim.
 >   - Agora só o `CVG_X_ALPHA` (bordas recortadas de árvores e placas) descarta por alfa. O reflexo do kart no gelo do Sherbet Land também passou a aparecer.
+> - **Correção (2026-10-29, relatada jogando: "cortes" nos menus e na seleção de personagens):** retratos e caixas de menu desenhados em faixas (por exemplo, 64×16, com tile em wrap) mostravam linhas finas nas emendas, em 1× e em 2×.
+>   - Causa: o filtro bilinear amostrava meio texel antes (`s − 0,5`), como um filtro centrado. Na primeira linha de cada faixa, isso misturava a linha −1, que pela repetição é a última da própria faixa. O RDP não faz esse deslocamento: em s = 16,0 ele lê só o texel 16.
+>   - Agora a amostragem segue o hardware. Na passada ampliada, os retângulos de textura amostram a partir do canto do pixel, como em 1×, e ficam presos aos pixels que cobrem em 1×. Os 26 replays foram regravados.
 > - **Ferramentas:**
 >   - `MK64_INPUT="de-ate:BOTOES;..."` (entrada roteirizada);
 >   - `MK64_SHOTS=n[:de[:ate]]` (capturas BMP);

@@ -325,7 +325,8 @@ static Color sample(int tile_index, float s, float t) {
         int it = wrap_coord((int)floorf(t), tl->maskt, tl->cmt, maxt);
         return fetch_texel(tl, is, it);
     }
-    s -= 0.5f; t -= 0.5f;
+    // Like the RDP, the filter starts at the texel the coordinate falls on (no half-texel shift):
+    // pictures drawn in strips sample only their own texels at the strip edges.
     float fs = floorf(s), ft = floorf(t);
     float a = s - fs, b = t - ft;
     int s0 = (int)fs, t0 = (int)ft;
@@ -640,8 +641,18 @@ static void draw_texrect(const Op *op, int by0, int by1) {
     Color white = {1, 1, 1, 1};
     for (int y = y0; y < y1; y++)
         for (int x = x0; x < x1; x++) {
-            // Texel position of the pixel, in 1x pixels (its center, past the first one, when enlarged).
-            float px = !g_hipass ? (float)x : (x - g_ox + 0.5f) / S - 0.5f, py = !g_hipass ? (float)y : (y + 0.5f) / S - 0.5f;
+            // Texel position of the pixel, in 1x pixels: its corner, as the RDP samples. Enlarged
+            // pixels stay within the 1x pixels the rectangle covers, so pictures drawn in strips
+            // never filter in texels from beyond a strip edge.
+            float px = (float)x, py = (float)y;
+            if (g_hipass) {
+                float lx = (float)(int)ulx, hx = (float)((int)op->u.tr.lrx - 1);
+                float ly = (float)(int)uly, hy = (float)((int)op->u.tr.lry - 1);
+                px = (x - g_ox) / S;
+                py = y / S;
+                px = px < lx ? lx : px > hx ? hx : px;
+                py = py < ly ? ly : py > hy ? hy : py;
+            }
             float dx = px - ulx, dy = py - uly;
             float s = flip ? op->u.tr.s0 + dy * op->u.tr.dsdx : op->u.tr.s0 + dx * op->u.tr.dsdx;
             float t = flip ? op->u.tr.t0 + dx * op->u.tr.dtdy : op->u.tr.t0 + dy * op->u.tr.dtdy;
