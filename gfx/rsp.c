@@ -331,7 +331,10 @@ void rsp_run_display_list(uint8_t *rdram, uint32_t dl) {
         case 0xB6: S.geometry &= ~w1; break;  // G_CLEARGEOMETRYMODE
         case 0xB7: S.geometry |= w1; break;   // G_SETGEOMETRYMODE
         case 0xB8:                             // G_ENDDL
-            if (sp == 0) return;
+            if (sp == 0) {
+                rdp_flush();
+                return;
+            }
             pc = stack[--sp];
             break;
         case 0xB9: case 0xBA: {  // G_SETOTHERMODE_L / _H: shift, length, data
@@ -378,6 +381,7 @@ void rsp_run_display_list(uint8_t *rdram, uint32_t dl) {
             break;
         }
     }
+    rdp_flush();  // display list ran past the guard without G_ENDDL
 }
 
 void rsp_reset(void) {

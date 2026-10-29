@@ -6,8 +6,11 @@
 #include "rdp.h"
 
 #include <math.h>
+#include <process.h>
 #include <stdlib.h>
 #include <string.h>
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
 
 #include "recomp.h"
 #include "rsp.h"
@@ -27,7 +30,7 @@ typedef struct Tile {
 
 typedef struct Color { float r, g, b, a; } Color;
 
-static struct {
+typedef struct RdpState {
     uint32_t om_hi, om_lo;
     uint32_t cimg, cimg_width, cimg_siz, zimg, timg, timg_width, timg_siz, timg_fmt;
     Tile tiles[8];
@@ -38,7 +41,16 @@ static struct {
     uint32_t fill;
     float prim_depth;
     int sc_x0, sc_y0, sc_x1, sc_y1;  // scissor, pixels, exclusive end
-} R;
+    int tile;                        // tile sampled: G_TEXTURE tile or the texrect's own
+    int need_tex0, need_tex1, need_mem;  // work the combiner/blender actually need
+} RdpState;
+
+// The command stream updates REC. Primitives are recorded with a snapshot of it and drawn later,
+// in parallel bands; the pixel code reads the snapshot of the primitive it draws through R.
+static RdpState REC;
+static int g_dirty = 1;  // REC changed since the last snapshot
+static __declspec(thread) const RdpState *g_cur = &REC;
+#define R (*g_cur)
 
 // One float Z buffer per Z image address (the game uses a single one).
 static struct { uint32_t addr; int w, h; float *z; } g_zbuf;
@@ -59,12 +71,11 @@ enum { CYC_1, CYC_2, CYC_COPY, CYC_FILL };
 #define ALPHA_CVG_SEL() ((R.om_lo >> 13) & 1)
 #define FORCE_BL() ((R.om_lo >> 14) & 1)
 
-void rdp_set_othermode(uint32_t hi, uint32_t lo) { R.om_hi = hi; R.om_lo = lo; }
+void rdp_set_othermode(uint32_t hi, uint32_t lo) { REC.om_hi = hi; REC.om_lo = lo; g_dirty = 1; }
 void rdp_get_othermode(uint32_t *hi, uint32_t *lo) { *hi = R.om_hi; *lo = R.om_lo; }
 int rdp_cimg_width(void) { return (int)R.cimg_width; }
 
 // Per-primitive work skipped when the current state does not need it (same results either way).
-static struct { int tex0, tex1, mem; } g_need;
 
 static int combiner_uses(int sel_a, int sel_b, int sel_c, int sel_d, int aa, int ab, int ac, int ad, int texel) {
     // Color A/B/D and alpha A/B/D: 1 = TEXEL0, 2 = TEXEL1; color C adds 8/9 (texel alphas); alpha C 1/2.
@@ -81,16 +92,16 @@ static void update_needs(void) {
         if (two)
             u |= combiner_uses((h >> 5) & 15, (l >> 24) & 15, h & 31, (l >> 6) & 7,
                                (l >> 21) & 7, (l >> 3) & 7, (l >> 18) & 7, l & 7, texel);
-        if (texel == 1) g_need.tex0 = u; else g_need.tex1 = u;
+        if (texel == 1) REC.need_tex0 = u; else REC.need_tex1 = u;
     }
     // Memory color: input 1 of P/M (memory color) or of B (memory alpha). In 2-cycle mode any use in
     // either cycle counts; in 1-cycle mode cycle 0 is final and, without FORCE_BL, only P is output.
     int p0 = (R.om_lo >> 30) & 3, m0 = (R.om_lo >> 22) & 3, b0 = (R.om_lo >> 18) & 3;
     int p1 = (R.om_lo >> 28) & 3, m1 = (R.om_lo >> 20) & 3, b1 = (R.om_lo >> 16) & 3;
     if (two)
-        g_need.mem = p0 == 1 || m0 == 1 || b0 == 1 || p1 == 1 || m1 == 1 || b1 == 1;
+        REC.need_mem = p0 == 1 || m0 == 1 || b0 == 1 || p1 == 1 || m1 == 1 || b1 == 1;
     else
-        g_need.mem = p0 == 1 || (FORCE_BL() && (m0 == 1 || b0 == 1));
+        REC.need_mem = p0 == 1 || (FORCE_BL() && (m0 == 1 || b0 == 1));
 }
 
 
@@ -110,16 +121,20 @@ static uint16_t pack16(Color c) {
 }
 
 // ---------------------------------------------------------------------------------------------
+static void flush_if_reads_drawn(uint32_t addr, uint32_t len);
+
 // TMEM. Texels are stored big-endian; odd rows have their 32-bit halves swapped (bytes ^ 4),
 // and 32-bit texels keep RG in the low 2 KB and BA in the high 2 KB.
+// Reads the TMEM of the primitive being drawn (its snapshot), not the one being loaded.
 static uint8_t tmem_byte(uint32_t addr) { return R.tmem[addr & 0xFFF]; }
 
 static void load_block(int tile, int uls, int ult, int lrs, int dxt) {
-    Tile *t = &R.tiles[tile];
+    Tile *t = &REC.tiles[tile];
     int bytes_per_texel_x2 = R.timg_siz == SIZ_4 ? 1 : R.timg_siz == SIZ_8 ? 2 : R.timg_siz == SIZ_16 ? 4 : 8;
     uint32_t src = R.timg + (uint32_t)((ult * (int)R.timg_width + uls) * bytes_per_texel_x2 / 2);
     uint32_t nbytes = (uint32_t)((lrs - uls + 1) * bytes_per_texel_x2 / 2);
     nbytes = (nbytes + 7) & ~7u;
+    flush_if_reads_drawn(src, nbytes);
     uint32_t base = (uint32_t)t->tmem * 8;
     uint32_t words = nbytes / 8;
     uint32_t counter = 0;  // dxt accumulates per 64-bit word; bit 11 marks odd lines
@@ -134,20 +149,25 @@ static void load_block(int tile, int uls, int ult, int lrs, int dxt) {
                 uint32_t dst = base + texel * 2 + (part & 1);
                 if (part >= 2) dst += 2048;
                 if (odd) dst ^= 4;
-                R.tmem[dst & 0xFFF] = b;
+                REC.tmem[dst & 0xFFF] = b;
             } else {
                 uint32_t dst = base + w * 8 + k;
                 if (odd) dst ^= 4;
-                R.tmem[dst & 0xFFF] = b;
+                REC.tmem[dst & 0xFFF] = b;
             }
         }
     }
 }
 
 static void load_tile(int tile, int uls, int ult, int lrs, int lrt) {
-    Tile *t = &R.tiles[tile];
+    Tile *t = &REC.tiles[tile];
     int bpp2 = R.timg_siz == SIZ_4 ? 1 : R.timg_siz == SIZ_8 ? 2 : R.timg_siz == SIZ_16 ? 4 : 8;  // half-bytes
     int width = lrs - uls + 1;
+    {
+        uint32_t first = R.timg + (uint32_t)((ult * (int)R.timg_width + uls) * bpp2 / 2);
+        uint32_t last = R.timg + (uint32_t)((lrt * (int)R.timg_width + lrs + 1) * bpp2 / 2);
+        flush_if_reads_drawn(first, last - first);
+    }
     for (int y = ult; y <= lrt; y++) {
         int row = y - ult;
         uint32_t src = R.timg + (uint32_t)((y * (int)R.timg_width + uls) * bpp2 / 2);
@@ -159,11 +179,11 @@ static void load_tile(int tile, int uls, int ult, int lrs, int lrt) {
                 uint32_t dst = (uint32_t)t->tmem * 8 + (uint32_t)(row * t->line * 8) + (uint32_t)(texel * 2 + (part & 1));
                 if (part >= 2) dst += 2048;
                 if (row & 1) dst ^= 4;
-                R.tmem[dst & 0xFFF] = b;
+                REC.tmem[dst & 0xFFF] = b;
             } else {
                 uint32_t dst = (uint32_t)t->tmem * 8 + (uint32_t)(row * t->line * 8 + k);
                 if (row & 1) dst ^= 4;
-                R.tmem[dst & 0xFFF] = b;
+                REC.tmem[dst & 0xFFF] = b;
             }
         }
     }
@@ -171,14 +191,15 @@ static void load_tile(int tile, int uls, int ult, int lrs, int lrt) {
 }
 
 static void load_tlut(int tile, int uls, int lrs) {
-    Tile *t = &R.tiles[tile];
+    flush_if_reads_drawn(REC.timg + (uint32_t)uls * 2, (uint32_t)(lrs - uls + 1) * 2);
+    Tile *t = &REC.tiles[tile];
     // Palette entries are 16-bit; TMEM quadruples each one into a 64-bit word.
     for (int k = uls; k <= lrs; k++) {
         uint16_t c = mem_r16(g_ram, RAM(R.timg + (uint32_t)k * 2));
         uint32_t dst = (uint32_t)t->tmem * 8 + (uint32_t)(k - uls) * 8;
         for (int q = 0; q < 4; q++) {
-            R.tmem[(dst + q * 2) & 0xFFF] = (uint8_t)(c >> 8);
-            R.tmem[(dst + q * 2 + 1) & 0xFFF] = (uint8_t)c;
+            REC.tmem[(dst + q * 2) & 0xFFF] = (uint8_t)(c >> 8);
+            REC.tmem[(dst + q * 2 + 1) & 0xFFF] = (uint8_t)c;
         }
     }
 }
@@ -366,16 +387,26 @@ static Color blend_cycle(int cycle, Color pixel, Color mem, float shade_alpha, i
 }
 
 // ---------------------------------------------------------------------------------------------
-static float *zbuffer(void) {
-    if (!R.zimg || !R.cimg_width) return NULL;
-    int w = (int)R.cimg_width, h = 240;
-    if (!g_zbuf.z || g_zbuf.addr != R.zimg || g_zbuf.w != w) {
+// Z buffer: allocated while recording (main thread); the drawing threads only index it.
+void rdp_flush(void);
+
+// Only primitives that test/update Z (or clear the Z image) may (re)allocate it, as in the
+// sequential renderer; pending primitives are drawn first since a reallocation resets it.
+static float *zbuffer_alloc(void) {
+    if (!REC.zimg || !REC.cimg_width) return NULL;
+    int w = (int)REC.cimg_width, h = 240;
+    if (!g_zbuf.z || g_zbuf.addr != REC.zimg || g_zbuf.w != w) {
+        rdp_flush();
         free(g_zbuf.z);
         g_zbuf.z = malloc(sizeof(float) * (size_t)w * h);
         for (int k = 0; k < w * h; k++) g_zbuf.z[k] = 1.0f;
-        g_zbuf.addr = R.zimg; g_zbuf.w = w; g_zbuf.h = h;
+        g_zbuf.addr = REC.zimg; g_zbuf.w = w; g_zbuf.h = h;
     }
     return g_zbuf.z;
+}
+
+static float *zbuffer(void) {
+    return g_zbuf.z && g_zbuf.addr == R.zimg && g_zbuf.w == (int)R.cimg_width ? g_zbuf.z : NULL;
 }
 
 static void write_pixel(int x, int y, Color comb, float shade_alpha, float z) {
@@ -395,7 +426,7 @@ static void write_pixel(int x, int y, Color comb, float shade_alpha, float z) {
     }
     uint32_t addr = R.cimg + (uint32_t)(y * (int)R.cimg_width + x) * 2;
     Color mem = {0, 0, 0, 0};
-    if (g_need.mem) mem = rgba16(mem_r16(g_ram, RAM(addr)));
+    if (R.need_mem) mem = rgba16(mem_r16(g_ram, RAM(addr)));
     Color out;
     if (CYCLE_TYPE() == CYC_2) {
         Color c0 = blend_cycle(0, comb, mem, shade_alpha, 0);
@@ -410,10 +441,10 @@ static void write_pixel(int x, int y, Color comb, float shade_alpha, float z) {
 static Color shade_pixel(Color shade, float s, float t) {
     Inputs in;
     in.shade = shade;
-    int tile = rsp_current_tile();
+    int tile = R.tile;
     Color zero = {0, 0, 0, 0};
-    in.t0 = g_need.tex0 || (g_need.tex1 && CYCLE_TYPE() != CYC_2) ? sample(tile, s, t) : zero;
-    in.t1 = CYCLE_TYPE() == CYC_2 ? (g_need.tex1 ? sample(tile + 1, s, t) : zero) : in.t0;
+    in.t0 = R.need_tex0 || (R.need_tex1 && CYCLE_TYPE() != CYC_2) ? sample(tile, s, t) : zero;
+    in.t1 = CYCLE_TYPE() == CYC_2 ? (R.need_tex1 ? sample(tile + 1, s, t) : zero) : in.t0;
     in.comb = zero;
     Color c = combine_cycle(0, &in);
     if (CYCLE_TYPE() == CYC_2) {
@@ -424,18 +455,35 @@ static Color shade_pixel(Color shade, float s, float t) {
 }
 
 // ---------------------------------------------------------------------------------------------
-void rdp_triangle(const RdpVertex *v0, const RdpVertex *v1, const RdpVertex *v2) {
-    if (!R.cimg_width) return;
-    update_needs();
+// Recorded primitives. Each kernel draws only rows [by0, by1) of its primitive.
+enum { OP_TRI, OP_TEXRECT, OP_FILL, OP_RECT };
+
+typedef struct Op {
+    int kind;
+    const RdpState *st;
+    union {
+        RdpVertex v[3];
+        struct { float ulx, uly, lrx, lry, s0, t0, dsdx, dtdy; int flip; } tr;
+        struct { int x0, y0, x1, y1; } rc;
+    } u;
+} Op;
+
+static void clip_rows(int *y0, int *y1, int by0, int by1) {
+    if (*y0 < R.sc_y0) *y0 = R.sc_y0;
+    if (*y1 > R.sc_y1) *y1 = R.sc_y1;
+    if (*y0 < by0) *y0 = by0;
+    if (*y1 > by1) *y1 = by1;
+}
+
+static void draw_triangle(const Op *op, int by0, int by1) {
+    const RdpVertex *v0 = &op->u.v[0], *v1 = &op->u.v[1], *v2 = &op->u.v[2];
     float area = (v1->x - v0->x) * (v2->y - v0->y) - (v2->x - v0->x) * (v1->y - v0->y);
-    if (fabsf(area) < 1e-6f) return;
     float minx = fminf(v0->x, fminf(v1->x, v2->x)), maxx = fmaxf(v0->x, fmaxf(v1->x, v2->x));
     float miny = fminf(v0->y, fminf(v1->y, v2->y)), maxy = fmaxf(v0->y, fmaxf(v1->y, v2->y));
     int x0 = (int)floorf(minx), x1 = (int)ceilf(maxx), y0 = (int)floorf(miny), y1 = (int)ceilf(maxy);
     if (x0 < R.sc_x0) x0 = R.sc_x0;
-    if (y0 < R.sc_y0) y0 = R.sc_y0;
     if (x1 > R.sc_x1) x1 = R.sc_x1;
-    if (y1 > R.sc_y1) y1 = R.sc_y1;
+    clip_rows(&y0, &y1, by0, by1);
     int persp = TEX_PERSP();
     float inv = 1.0f / area;
     for (int y = y0; y < y1; y++) {
@@ -463,16 +511,16 @@ void rdp_triangle(const RdpVertex *v0, const RdpVertex *v1, const RdpVertex *v2)
     }
 }
 
-static void fill_rect(int x0, int y0, int x1, int y1) {
+static void draw_fill(const Op *op, int by0, int by1) {
+    int x0 = op->u.rc.x0, y0 = op->u.rc.y0, x1 = op->u.rc.x1, y1 = op->u.rc.y1;
     if (x0 < R.sc_x0) x0 = R.sc_x0;
-    if (y0 < R.sc_y0) y0 = R.sc_y0;
     if (x1 > R.sc_x1) x1 = R.sc_x1;
-    if (y1 > R.sc_y1) y1 = R.sc_y1;
+    clip_rows(&y0, &y1, by0, by1);
     if (R.cimg == R.zimg) {  // clearing the Z image
-        float *zb = zbuffer();
+        float *zb = g_zbuf.z && g_zbuf.addr == R.zimg ? g_zbuf.z : NULL;
         if (zb)
             for (int y = y0; y < y1 && y < g_zbuf.h; y++)
-                for (int x = x0; x < x1; x++) zb[y * g_zbuf.w + x] = 1.0f;
+                for (int x = x0; x < x1 && x < g_zbuf.w; x++) zb[y * g_zbuf.w + x] = 1.0f;
     }
     for (int y = y0; y < y1; y++)
         for (int x = x0; x < x1; x++) {
@@ -482,32 +530,31 @@ static void fill_rect(int x0, int y0, int x1, int y1) {
         }
 }
 
-void rdp_texrect(uint32_t w0, uint32_t w1, uint32_t st, uint32_t dsdt, int flip) {
-    if (!R.cimg_width) return;
-    update_needs();
-    float lrx = ((w0 >> 12) & 0xFFF) / 4.0f, lry = (w0 & 0xFFF) / 4.0f;
-    int tile = (w1 >> 24) & 7;
-    float ulx = ((w1 >> 12) & 0xFFF) / 4.0f, uly = (w1 & 0xFFF) / 4.0f;
-    float s0 = (int16_t)(st >> 16) / 32.0f, t0 = (int16_t)st / 32.0f;
-    float dsdx = (int16_t)(dsdt >> 16) / 1024.0f, dtdy = (int16_t)dsdt / 1024.0f;
-    int cyc = CYCLE_TYPE();
-    if (cyc == CYC_COPY) { dsdx /= 4.0f; lrx += 1; lry += 1; }
-    else if (cyc == CYC_FILL) { lrx += 1; lry += 1; }
-    int x0 = (int)ulx, y0 = (int)uly, x1 = (int)lrx, y1 = (int)lry;
+static void draw_rect(const Op *op, int by0, int by1) {  // 1/2-cycle FILLRECT through the combiner
+    Color white = {1, 1, 1, 1};
+    int x0 = op->u.rc.x0 < R.sc_x0 ? R.sc_x0 : op->u.rc.x0, x1 = op->u.rc.x1 < R.sc_x1 ? op->u.rc.x1 : R.sc_x1;
+    int y0 = op->u.rc.y0, y1 = op->u.rc.y1;
+    clip_rows(&y0, &y1, by0, by1);
+    for (int y = y0; y < y1; y++)
+        for (int x = x0; x < x1; x++) write_pixel(x, y, shade_pixel(white, 0, 0), 1.0f, R.prim_depth);
+}
+
+static void draw_texrect(const Op *op, int by0, int by1) {
+    float ulx = op->u.tr.ulx, uly = op->u.tr.uly;
+    int cyc = CYCLE_TYPE(), flip = op->u.tr.flip;
+    int x0 = (int)ulx, y0 = (int)uly, x1 = (int)op->u.tr.lrx, y1 = (int)op->u.tr.lry;
     if (x0 < R.sc_x0) x0 = R.sc_x0;
-    if (y0 < R.sc_y0) y0 = R.sc_y0;
     if (x1 > R.sc_x1) x1 = R.sc_x1;
-    if (y1 > R.sc_y1) y1 = R.sc_y1;
-    rsp_set_rect_tile(tile);
+    clip_rows(&y0, &y1, by0, by1);
     Color white = {1, 1, 1, 1};
     for (int y = y0; y < y1; y++)
         for (int x = x0; x < x1; x++) {
             float dx = x - ulx, dy = y - uly;
-            float s = flip ? s0 + dy * dsdx : s0 + dx * dsdx;
-            float t = flip ? t0 + dx * dtdy : t0 + dy * dtdy;
+            float s = flip ? op->u.tr.s0 + dy * op->u.tr.dsdx : op->u.tr.s0 + dx * op->u.tr.dsdx;
+            float t = flip ? op->u.tr.t0 + dx * op->u.tr.dtdy : op->u.tr.t0 + dy * op->u.tr.dtdy;
             Color c;
             if (cyc == CYC_COPY) {
-                c = sample(tile, s, t);
+                c = sample(R.tile, s, t);
                 if (ALPHA_COMPARE() && c.a < 0.5f) continue;
                 uint32_t addr = R.cimg + (uint32_t)(y * (int)R.cimg_width + x) * 2;
                 mem_w16(g_ram, RAM(addr), pack16(c));
@@ -516,44 +563,175 @@ void rdp_texrect(uint32_t w0, uint32_t w1, uint32_t st, uint32_t dsdt, int flip)
             c = shade_pixel(white, s, t);
             write_pixel(x, y, c, 1.0f, R.prim_depth);
         }
-    rsp_set_rect_tile(-1);
+}
+
+static void draw_op(const Op *op, int by0, int by1) {
+    g_cur = op->st;
+    switch (op->kind) {
+    case OP_TRI: draw_triangle(op, by0, by1); break;
+    case OP_TEXRECT: draw_texrect(op, by0, by1); break;
+    case OP_FILL: draw_fill(op, by0, by1); break;
+    default: draw_rect(op, by0, by1); break;
+    }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Recording: ops plus copy-on-change state snapshots, freed after each flush.
+static Op *g_ops;
+static size_t g_op_count, g_op_cap;
+static RdpState **g_snaps;
+static size_t g_snap_count, g_snap_cap;
+static uint32_t g_drawn_lo = 0xFFFFFFFFu, g_drawn_hi;  // RDRAM range written by pending ops
+
+static const RdpState *snapshot(void) {
+    if (!g_dirty && g_snap_count) return g_snaps[g_snap_count - 1];
+    if (g_snap_count == g_snap_cap) {
+        g_snap_cap = g_snap_cap ? g_snap_cap * 2 : 256;
+        g_snaps = realloc(g_snaps, g_snap_cap * sizeof *g_snaps);
+    }
+    RdpState *s = malloc(sizeof *s);
+    *s = REC;
+    g_snaps[g_snap_count++] = s;
+    g_dirty = 0;
+    return s;
+}
+
+static Op *record(int kind, int tile) {
+    if (REC.tile != tile) { REC.tile = tile; g_dirty = 1; }
+    int t0 = REC.need_tex0, t1 = REC.need_tex1, m = REC.need_mem;
+    update_needs();
+    if (t0 != REC.need_tex0 || t1 != REC.need_tex1 || m != REC.need_mem) g_dirty = 1;
+    int uses_z = kind == OP_FILL ? REC.cimg == REC.zimg : ((REC.om_lo >> 4) & 3) != 0;  // Z_CMP | Z_UPD
+    if (uses_z) zbuffer_alloc();
+    if (g_op_count == g_op_cap) {
+        g_op_cap = g_op_cap ? g_op_cap * 2 : 1024;
+        g_ops = realloc(g_ops, g_op_cap * sizeof *g_ops);
+    }
+    Op *op = &g_ops[g_op_count++];
+    op->kind = kind;
+    op->st = snapshot();
+    uint32_t lo = REC.cimg, hi = REC.cimg + REC.cimg_width * 240 * 2;
+    if (lo < g_drawn_lo) g_drawn_lo = lo;
+    if (hi > g_drawn_hi) g_drawn_hi = hi;
+    return op;
+}
+
+static int g_threads;
+
+typedef struct Band { int y0, y1; } Band;
+
+static unsigned __stdcall band_worker(void *arg) {
+    const Band *b = arg;
+    for (size_t k = 0; k < g_op_count; k++) draw_op(&g_ops[k], b->y0, b->y1);
+    g_cur = &REC;
+    return 0;
+}
+
+// Draws every recorded primitive. Bands of rows go to separate threads; each pixel still sees the
+// primitives in command order, so the result is the same as drawing them one by one.
+// MK64_RENDER_THREADS overrides the thread count (1 = sequential).
+void rdp_flush(void) {
+    if (g_op_count) {
+        if (!g_threads) {
+            SYSTEM_INFO si;
+            GetSystemInfo(&si);
+            g_threads = (int)si.dwNumberOfProcessors;
+            const char *env = getenv("MK64_RENDER_THREADS");
+            if (env && atoi(env) > 0) g_threads = atoi(env);
+            if (g_threads > 16) g_threads = 16;
+            if (g_threads < 1) g_threads = 1;
+        }
+        Band bands[16];
+        HANDLE handles[16];
+        int n = g_threads;
+        for (int k = 0; k < n; k++) { bands[k].y0 = 240 * k / n; bands[k].y1 = 240 * (k + 1) / n; }
+        for (int k = 1; k < n; k++) handles[k] = (HANDLE)_beginthreadex(NULL, 0, band_worker, &bands[k], 0, NULL);
+        band_worker(&bands[0]);
+        if (n > 1) WaitForMultipleObjects((DWORD)(n - 1), &handles[1], TRUE, INFINITE);
+        for (int k = 1; k < n; k++) CloseHandle(handles[k]);
+    }
+    for (size_t k = 0; k < g_snap_count; k++) free(g_snaps[k]);
+    g_snap_count = 0;
+    g_op_count = 0;
+    g_drawn_lo = 0xFFFFFFFFu;
+    g_drawn_hi = 0;
+    g_dirty = 1;
+    g_cur = &REC;
+}
+
+// A texture load from an image drawn by pending primitives must see them drawn first.
+static void flush_if_reads_drawn(uint32_t addr, uint32_t len) {
+    if (g_op_count && addr < g_drawn_hi && addr + len > g_drawn_lo) rdp_flush();
+}
+
+// MK64_RENDER_IMMEDIATE: draw each primitive as soon as it is recorded (debugging aid).
+static void maybe_immediate(void) {
+    static int immediate = -1;
+    if (immediate < 0) immediate = getenv("MK64_RENDER_IMMEDIATE") != NULL;
+    if (immediate) rdp_flush();
+}
+
+void rdp_triangle(const RdpVertex *v0, const RdpVertex *v1, const RdpVertex *v2) {
+    if (!REC.cimg_width) return;
+    float area = (v1->x - v0->x) * (v2->y - v0->y) - (v2->x - v0->x) * (v1->y - v0->y);
+    if (fabsf(area) < 1e-6f) return;
+    Op *op = record(OP_TRI, rsp_current_tile());
+    op->u.v[0] = *v0;
+    op->u.v[1] = *v1;
+    op->u.v[2] = *v2;
+    maybe_immediate();
+}
+
+void rdp_texrect(uint32_t w0, uint32_t w1, uint32_t st, uint32_t dsdt, int flip) {
+    if (!REC.cimg_width) return;
+    float lrx = ((w0 >> 12) & 0xFFF) / 4.0f, lry = (w0 & 0xFFF) / 4.0f;
+    float dsdx = (int16_t)(dsdt >> 16) / 1024.0f, dtdy = (int16_t)dsdt / 1024.0f;
+    int cyc = CYCLE_TYPE();
+    if (cyc == CYC_COPY) { dsdx /= 4.0f; lrx += 1; lry += 1; }
+    else if (cyc == CYC_FILL) { lrx += 1; lry += 1; }
+    Op *op = record(OP_TEXRECT, (int)((w1 >> 24) & 7));
+    op->u.tr.ulx = ((w1 >> 12) & 0xFFF) / 4.0f;
+    op->u.tr.uly = (w1 & 0xFFF) / 4.0f;
+    op->u.tr.lrx = lrx;
+    op->u.tr.lry = lry;
+    op->u.tr.s0 = (int16_t)(st >> 16) / 32.0f;
+    op->u.tr.t0 = (int16_t)st / 32.0f;
+    op->u.tr.dsdx = dsdx;
+    op->u.tr.dtdy = dtdy;
+    op->u.tr.flip = flip;
+    maybe_immediate();
 }
 
 void rdp_command(uint32_t w0, uint32_t w1) {
     uint8_t op = (uint8_t)(w0 >> 24);
+    g_dirty = 1;
     switch (op) {
     case 0xFF:  // SETCIMG
-        R.cimg = w1 & 0x00FFFFFFu; R.cimg_width = (w0 & 0xFFF) + 1; R.cimg_siz = (w0 >> 19) & 3;
+        REC.cimg = w1 & 0x00FFFFFFu; REC.cimg_width = (w0 & 0xFFF) + 1; REC.cimg_siz = (w0 >> 19) & 3;
         break;
-    case 0xFE: R.zimg = w1 & 0x00FFFFFFu; break;
+    case 0xFE: REC.zimg = w1 & 0x00FFFFFFu; break;
     case 0xFD:  // SETTIMG
-        R.timg = w1 & 0x00FFFFFFu; R.timg_width = (w0 & 0xFFF) + 1;
-        R.timg_fmt = (w0 >> 21) & 7; R.timg_siz = (w0 >> 19) & 3;
+        REC.timg = w1 & 0x00FFFFFFu; REC.timg_width = (w0 & 0xFFF) + 1;
+        REC.timg_fmt = (w0 >> 21) & 7; REC.timg_siz = (w0 >> 19) & 3;
         break;
-    case 0xFC: R.combine_hi = w0 & 0x00FFFFFFu; R.combine_lo = w1; break;
-    case 0xFB: R.env = unpack32(w1); break;
-    case 0xFA: R.prim = unpack32(w1); R.prim_lod = (w0 & 0xFF) / 255.0f; break;
-    case 0xF9: R.blend = unpack32(w1); break;
-    case 0xF8: R.fog = unpack32(w1); break;
-    case 0xF7: R.fill = w1; break;
+    case 0xFC: REC.combine_hi = w0 & 0x00FFFFFFu; REC.combine_lo = w1; break;
+    case 0xFB: REC.env = unpack32(w1); break;
+    case 0xFA: REC.prim = unpack32(w1); REC.prim_lod = (w0 & 0xFF) / 255.0f; break;
+    case 0xF9: REC.blend = unpack32(w1); break;
+    case 0xF8: REC.fog = unpack32(w1); break;
+    case 0xF7: REC.fill = w1; break;
     case 0xF6: {  // FILLRECT: lrx lry | ulx uly in 10.2
         int lrx = (int)((w0 >> 12) & 0xFFF) / 4, lry = (int)(w0 & 0xFFF) / 4;
         int ulx = (int)((w1 >> 12) & 0xFFF) / 4, uly = (int)(w1 & 0xFFF) / 4;
         int cyc = CYCLE_TYPE();
         if (cyc == CYC_FILL || cyc == CYC_COPY) { lrx++; lry++; }
-        if (cyc == CYC_FILL) {
-            fill_rect(ulx, uly, lrx, lry);
-        } else {  // 1/2-cycle rectangles go through the combiner and blender
-            update_needs();
-            Color white = {1, 1, 1, 1};
-            for (int y = uly < R.sc_y0 ? R.sc_y0 : uly; y < lry && y < R.sc_y1; y++)
-                for (int x = ulx < R.sc_x0 ? R.sc_x0 : ulx; x < lrx && x < R.sc_x1; x++)
-                    write_pixel(x, y, shade_pixel(white, 0, 0), 1.0f, R.prim_depth);
-        }
+        Op *rect = record(cyc == CYC_FILL ? OP_FILL : OP_RECT, REC.tile);
+        rect->u.rc.x0 = ulx; rect->u.rc.y0 = uly; rect->u.rc.x1 = lrx; rect->u.rc.y1 = lry;
+        maybe_immediate();
         break;
     }
     case 0xF5: {  // SETTILE
-        Tile *t = &R.tiles[(w1 >> 24) & 7];
+        Tile *t = &REC.tiles[(w1 >> 24) & 7];
         t->fmt = (w0 >> 21) & 7; t->siz = (w0 >> 19) & 3; t->line = (w0 >> 9) & 0x1FF; t->tmem = w0 & 0x1FF;
         t->palette = (w1 >> 20) & 15;
         t->cmt = (w1 >> 18) & 3; t->maskt = (w1 >> 14) & 15; t->shiftt = (w1 >> 10) & 15;
@@ -568,7 +746,7 @@ void rdp_command(uint32_t w0, uint32_t w1) {
         load_block((w1 >> 24) & 7, (int)((w0 >> 12) & 0xFFF), (int)(w0 & 0xFFF), (int)((w1 >> 12) & 0xFFF), (int)(w1 & 0xFFF));
         break;
     case 0xF2: {  // SETTILESIZE
-        Tile *t = &R.tiles[(w1 >> 24) & 7];
+        Tile *t = &REC.tiles[(w1 >> 24) & 7];
         t->uls = ((w0 >> 12) & 0xFFF) / 4.0f; t->ult = (w0 & 0xFFF) / 4.0f;
         t->lrs = ((w1 >> 12) & 0xFFF) / 4.0f; t->lrt = (w1 & 0xFFF) / 4.0f;
         break;
@@ -576,12 +754,12 @@ void rdp_command(uint32_t w0, uint32_t w1) {
     case 0xF0:  // LOADTLUT
         load_tlut((w1 >> 24) & 7, (int)((w0 >> 12) & 0xFFF) / 4, (int)((w1 >> 12) & 0xFFF) / 4);
         break;
-    case 0xEF: R.om_hi = w0 & 0x00FFFFFFu; R.om_lo = w1; break;
-    case 0xEE: R.prim_depth = ((w1 >> 16) & 0x7FFF) / 32767.0f; break;
+    case 0xEF: REC.om_hi = w0 & 0x00FFFFFFu; REC.om_lo = w1; break;
+    case 0xEE: REC.prim_depth = ((w1 >> 16) & 0x7FFF) / 32767.0f; break;
     case 0xED:  // SETSCISSOR
-        R.sc_x0 = (int)((w0 >> 12) & 0xFFF) / 4; R.sc_y0 = (int)(w0 & 0xFFF) / 4;
-        R.sc_x1 = (int)((w1 >> 12) & 0xFFF) / 4; R.sc_y1 = (int)(w1 & 0xFFF) / 4;
-        if (R.sc_y1 > 240) R.sc_y1 = 240;
+        REC.sc_x0 = (int)((w0 >> 12) & 0xFFF) / 4; REC.sc_y0 = (int)(w0 & 0xFFF) / 4;
+        REC.sc_x1 = (int)((w1 >> 12) & 0xFFF) / 4; REC.sc_y1 = (int)(w1 & 0xFFF) / 4;
+        if (R.sc_y1 > 240) REC.sc_y1 = 240;
         break;
     default: break;  // syncs, convert, key
     }
@@ -592,6 +770,7 @@ void rdp_reset(uint8_t *rdram) {
 }
 
 void rdp_read_framebuffer(uint32_t addr, int width, int height, uint32_t *out) {
+    rdp_flush();
     for (int y = 0; y < height; y++)
         for (int x = 0; x < width; x++) {
             uint16_t c = mem_r16(g_ram, RAM(addr + (uint32_t)(y * width + x) * 2));

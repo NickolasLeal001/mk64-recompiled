@@ -14,6 +14,8 @@ typedef struct RdpVertex {
 } RdpVertex;
 
 void rdp_reset(uint8_t *rdram);
+// Draws all recorded primitives (in parallel bands). Called at the end of each display list.
+void rdp_flush(void);
 // Executes one RDP command (opcodes 0xE4-0xFF); `next` gives the following words for texrect.
 void rdp_command(uint32_t w0, uint32_t w1);
 void rdp_texrect(uint32_t w0, uint32_t w1, uint32_t st, uint32_t dsdt, int flip);
