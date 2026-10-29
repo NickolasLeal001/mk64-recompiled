@@ -13,8 +13,17 @@ __pycache__/
 *.pyc
 
 # Screenshots of the game contain its art: keep them local
-fase5-*.png
+
 shots/
 build_prof/
 mk64_runtime.log
 dist/
+
+# Local only: plans, screenshots and analysis tools not needed to recompile and build
+PLANO.md
+PLANO_GPU.md
+fase*.png
+tools/explore.ps1
+tools/mkelf.py
+tools/build_rom_map.py
+tools/mio0.py
